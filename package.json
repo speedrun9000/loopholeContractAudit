@@ -1,0 +1,16 @@
+{
+  "name": "@loophole/contracts",
+  "private": true,
+  "type": "module",
+  "main": "abi/index.ts",
+  "types": "abi/index.ts",
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "viem": "^2.21.0"
+  }
+}

@@ -97,7 +97,9 @@ contract TestLoopE2E is Script {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0
+            initialDebt: 0,
+            initialBLV: 0,
+            swapFeePct: 0.01 ether
         });
 
         vm.broadcast(adminKey);

@@ -61,7 +61,9 @@ contract PresaleDepositTest is Test {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0
+            initialDebt: 0,
+            initialBLV: 0,
+            swapFeePct: 0.01 ether
         });
 
         address presaleAddr = factory.deployPresale(phases, config, bFactoryParams, address(presaleToken));
@@ -196,7 +198,9 @@ contract PresaleDepositTest is Test {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0
+            initialDebt: 0,
+            initialBLV: 0,
+            swapFeePct: 0.01 ether
         });
 
         address presaleAddr = factory.deployPresale(phases, config, bFactoryParams, address(presaleToken));

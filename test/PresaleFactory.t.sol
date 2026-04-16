@@ -98,7 +98,9 @@ contract PresaleFactoryTest is Test {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0
+            initialDebt: 0,
+            initialBLV: 0,
+            swapFeePct: 0.01 ether
         });
 
         // Deploy presale as admin
@@ -149,6 +151,8 @@ contract PresaleFactoryTest is Test {
         assertEq(storedParams.claimMerkleRoot, bytes32(0));
         assertEq(storedParams.initialCollateral, 0);
         assertEq(storedParams.initialDebt, 0);
+        assertEq(storedParams.initialBLV, 0);
+        assertEq(storedParams.swapFeePct, 0.01 ether);
 
         // Verify initial state
         assertEq(presaleImpl.getTotalRaised(), 0);
@@ -184,7 +188,9 @@ contract PresaleFactoryTest is Test {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0
+            initialDebt: 0,
+            initialBLV: 0,
+            swapFeePct: 0.01 ether
         });
 
         // Deploy 3 presales as owner
@@ -229,7 +235,9 @@ contract PresaleFactoryTest is Test {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0
+            initialDebt: 0,
+            initialBLV: 0,
+            swapFeePct: 0.01 ether
         });
 
         // Try to deploy as non-owner (user1)

@@ -52,6 +52,8 @@ interface IPresale {
         bytes32 claimMerkleRoot;
         uint256 initialCollateral;
         uint256 initialDebt;
+        uint256 initialBLV;
+        uint256 swapFeePct;
     }
 
     /**

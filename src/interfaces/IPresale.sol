@@ -12,7 +12,7 @@ interface IPresale {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Sale type: Credit (0) for credit positions, Spot (1) for bToken claims
-    /// @dev Credit = 0 so existing proxies default to credit behavior on upgrade
+    /// @dev Credit = 0, Spot = 1
     enum SaleType {
         Credit,
         Spot
@@ -52,6 +52,8 @@ interface IPresale {
         bytes32 claimMerkleRoot;
         uint256 initialCollateral;
         uint256 initialDebt;
+        uint256 initialBLV;
+        uint256 swapFeePct;
     }
 
     /**

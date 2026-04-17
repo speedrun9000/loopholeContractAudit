@@ -1,4 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
+//
+// ██████████████████████████████████████████████████████████████████████████████
+// █                                                                          █
+// █                     DO NOT AUDIT THIS CONTRACT                           █
+// █                                                                          █
+// █  This contract is out of scope for the audit. It is included here only   █
+// █  for compilation and integration testing purposes.                       █
+// █                                                                          █
+// ██████████████████████████████████████████████████████████████████████████████
+//
 pragma solidity ^0.8.0;
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";

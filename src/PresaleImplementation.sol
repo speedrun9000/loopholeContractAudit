@@ -65,8 +65,6 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
     /// @notice Whether the presale is cancelled
     bool public cancelled;
 
-    // --- New state variables (appended for upgrade safety) ---
-
     /// @notice Type of sale (Credit or Spot)
     SaleType public saleType;
 
@@ -306,12 +304,12 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
             reserve: address(presaleToken),
             initialPoolReserves: poolReserves,
             initialActivePrice: params.initialActivePrice,
-            initialBLV: 0,
+            initialBLV: bFactoryParams.initialBLV,
             feeRecipient: params.feeRouter,
             creator: bFactoryParams.creator,
             creatorFeePct: bFactoryParams.creatorFeePct,
-            swapFeePct: 0.01 ether,
-            createHook: false,
+            swapFeePct: bFactoryParams.swapFeePct,
+            createHook: bFactoryParams.createHook,
             claimMerkleRoot: params.claimMerkleRoot,
             initialCollateral: params.initialCollateral,
             initialDebt: params.initialDebt

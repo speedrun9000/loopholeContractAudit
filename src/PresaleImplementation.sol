@@ -65,8 +65,6 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
     /// @notice Whether the presale is cancelled
     bool public cancelled;
 
-    // --- New state variables (appended for upgrade safety) ---
-
     /// @notice Type of sale (Credit or Spot)
     SaleType public saleType;
 

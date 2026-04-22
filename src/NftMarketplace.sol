@@ -62,6 +62,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     error ZeroRecipientForNonZeroBps();
     error OnlySwapper();
     error CannotSwapOfferToken();
+    error CollectionNotRegistered();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -202,6 +203,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     /// @dev This will revert if no auction is ongoing *AND* this contract has no NFT to auction from the `nftCollection`
     function startAuction(address nftCollection) public whenNotPaused {
         if (auctionStartTimestamp[nftCollection] == 0) {
+            require(auctionDuration[nftCollection] != 0, CollectionNotRegistered());
             require(IERC721(nftCollection).balanceOf(address(this)) != 0, NoNftToAuction());
 
             auctionStartTimestamp[nftCollection] = block.timestamp;

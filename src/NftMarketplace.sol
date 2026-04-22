@@ -123,6 +123,9 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     /*//////////////////////////////////////////////////////////////
                               INITIALIZER
     //////////////////////////////////////////////////////////////*/
+    constructor() {
+        _disableInitializers();
+    }
 
     function initialize(IERC20 _offerToken, address _feeRouter, address initialOwner, IBSwap _bSwap, address _swapper)
         external

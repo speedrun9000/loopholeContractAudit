@@ -375,6 +375,15 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         _performCheckpoint(nftCollection, amountFees);
     }
 
+    /// @notice Permissionless function, allowing the caller to donate `amount` of `offerToken`, to be treated like fees for the `bToken`
+    function donate(address bToken, uint256 amount) external {
+        address nftCollection = collectionForBToken[bToken];
+        require(nftCollection != address(0), NftCollectionNotSetForBToken());
+
+        _performCheckpoint(nftCollection, amount);
+        offerToken.safeTransferFrom(msg.sender, address(this), amount);
+    }
+
     function _performCheckpoint(address nftCollection, uint256 amountFees) internal {
         offerAtCheckpoint[nftCollection] = offerPrice(nftCollection);
         lastCheckpointTimestamp[nftCollection] = block.timestamp;

@@ -396,7 +396,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         BTokenRecipients storage recipients = _recipients[address(bToken)];
         uint256 toAfterburner = (amountOut * feeConfig.bpsToAfterburner) / 10_000;
         uint256 toBLV = (amountOut * feeConfig.bpsToBLV) / 10_000;
-        if (toAfterburner > 0) IERC20(bToken).safeTransfer(recipients.afterburner, toAfterburner);
-        if (toBLV > 0) IERC20(bToken).safeTransfer(recipients.blvModule, toBLV);
+        if (toAfterburner > 0) IERC20(offerToken).safeTransfer(recipients.afterburner, toAfterburner);
+        if (toBLV > 0) IERC20(offerToken).safeTransfer(recipients.blvModule, toBLV);
     }
 }

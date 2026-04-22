@@ -8,6 +8,7 @@ import {MockERC721} from "./mocks/MockERC721.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBSwap} from "../src/interfaces/IBswap.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 contract NftMarketplaceTests is Test {
     NftMarketplace public nftMarketplace;
@@ -27,10 +28,24 @@ contract NftMarketplaceTests is Test {
         mockERC20 = new MockERC20("Test ERC20", "TEST20", 18);
         mockERC721 = new MockERC721("Test ERC721", "TEST721");
 
-        nftMarketplace = new NftMarketplace();
-        nftMarketplace.initialize({
-            _offerToken: mockERC20, _feeRouter: feeRouter, initialOwner: initialOwner, _bSwap: bSwap, _swapper: swapper
-        });
+        NftMarketplace nftMarketplaceImplementation = new NftMarketplace();
+        bytes memory marketplaceInitializationData = abi.encodeWithSelector(
+            NftMarketplace.initialize.selector,
+            mockERC20, // IERC20 _offerToken,
+            feeRouter, // address _feeRouter,
+            initialOwner, // address initialOwner,
+            bSwap, // IBSwap _bSwap,
+            swapper // address _swapper
+        );
+        nftMarketplace = NftMarketplace(
+            address(
+                new TransparentUpgradeableProxy({
+                    _logic: address(nftMarketplaceImplementation),
+                    initialOwner: initialOwner,
+                    _data: marketplaceInitializationData
+                })
+            )
+        );
 
         NftMarketplace.BTokenFeeConfig memory feeConfig =
             NftMarketplace.BTokenFeeConfig({bpsToAfterburner: 5000, bpsToBLV: 5000});

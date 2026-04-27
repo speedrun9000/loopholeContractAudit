@@ -80,6 +80,14 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
     /// @notice Whether the pool has been created (intermediate state for credit sales)
     bool public poolCreated;
 
+    /// @notice Timestamp at which finalizeSale created the pool (zero before finalization).
+    /// @dev Used to gate the selfCreditClaim escape hatch behind a grace period.
+    uint256 public poolCreatedAt;
+
+    /// @notice Grace period after finalizeSale during which only the admin may drive credit claims.
+    ///         After this window, depositors can permissionlessly self-rescue via selfCreditClaim.
+    uint256 public constant RESCUE_GRACE_PERIOD = 24 hours;
+
     /// @notice Baseline relay address, stored during finalization for credit batch claims
     address public baseline;
 
@@ -274,6 +282,7 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
 
         // Mark pool as created (intermediate state)
         poolCreated = true;
+        poolCreatedAt = block.timestamp;
 
         // Store baseline address for credit batch claims
         baseline = params.baseline;
@@ -391,6 +400,39 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
         IBCredit(baseline).claimCredit(createdToken, claimUsers, claimCollaterals, claimDebts, claimProofs);
 
         emit CreditBatchClaimed(claimUsers.length);
+    }
+
+    /**
+     * @notice Permissionless self-rescue for credit-sale depositors
+     * @dev Escape hatch in case the admin abandons the presale in the intermediate state
+     *      (poolCreated && !finalized) and never includes the caller in a claimCreditBatch.
+     *      Callable only after the RESCUE_GRACE_PERIOD elapses since finalizeSale, giving
+     *      the admin a window to drive batched claims before depositors self-rescue.
+     *      Caller must supply their own (collateral, debt, proof) tuple matching the
+     *      claimMerkleRoot set at pool creation. Authorization is enforced by Baseline's
+     *      proof check; the leaf is bound to msg.sender.
+     * @param collateral Caller's collateral amount as encoded in the merkle leaf
+     * @param debt Caller's debt amount as encoded in the merkle leaf
+     * @param proof Merkle proof for the caller's leaf
+     */
+    function selfCreditClaim(uint128 collateral, uint128 debt, bytes32[] calldata proof) external nonReentrant {
+        if (!poolCreated) revert NotPoolCreated();
+        if (finalized) revert PresaleAlreadyFinalized();
+        if (saleType != SaleType.Credit) revert InvalidSaleType();
+        if (block.timestamp < poolCreatedAt + RESCUE_GRACE_PERIOD) revert SelfCreditClaimGracePeriodActive();
+
+        address[] memory users = new address[](1);
+        users[0] = msg.sender;
+        uint128[] memory collaterals = new uint128[](1);
+        collaterals[0] = collateral;
+        uint128[] memory debts = new uint128[](1);
+        debts[0] = debt;
+        bytes32[][] memory proofs = new bytes32[][](1);
+        proofs[0] = proof;
+
+        IBCredit(baseline).claimCredit(createdToken, users, collaterals, debts, proofs);
+
+        emit CreditBatchClaimed(1);
     }
 
     /**

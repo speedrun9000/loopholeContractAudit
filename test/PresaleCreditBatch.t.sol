@@ -460,4 +460,70 @@ contract PresaleCreditBatchTest is Test {
         uint256 expectedCirculating = (1_000_000 ether * 500) / 10_000;
         assertEq(recipientBalance, expectedCirculating);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                     SELF CREDIT CLAIM (ESCAPE HATCH)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SelfCreditClaim_RevertsDuringGracePeriod() public {
+        PresaleImplementation presale = _deployCreditPresale();
+
+        vm.prank(admin);
+        presale.finalizeSale(_defaultFinalizeParams());
+
+        bytes32[] memory proof = new bytes32[](0);
+        vm.prank(address(0xA1));
+        vm.expectRevert(IPresale.SelfCreditClaimGracePeriodActive.selector);
+        presale.selfCreditClaim(500e18, 50e18, proof);
+    }
+
+    function test_SelfCreditClaim_SucceedsAfterGracePeriod() public {
+        PresaleImplementation presale = _deployCreditPresale();
+
+        vm.prank(admin);
+        presale.finalizeSale(_defaultFinalizeParams());
+
+        // Warp past the 24h grace window.
+        vm.warp(block.timestamp + presale.RESCUE_GRACE_PERIOD());
+
+        bytes32[] memory proof = new bytes32[](0);
+        address depositor = address(0xA1);
+
+        vm.expectEmit(false, false, false, true);
+        emit IPresale.CreditBatchClaimed(1);
+        vm.prank(depositor);
+        presale.selfCreditClaim(500e18, 50e18, proof);
+
+        assertEq(mockBaseline.getTotalClaimedUsers(), 1);
+        assertEq(mockBaseline.claimCreditUsers(0), depositor);
+        assertEq(mockBaseline.claimCreditCollaterals(0), 500e18);
+        assertEq(mockBaseline.claimCreditDebts(0), 50e18);
+    }
+
+    function test_SelfCreditClaim_RevertsAfterCompleteFinalization() public {
+        PresaleImplementation presale = _deployCreditPresale();
+
+        vm.prank(admin);
+        presale.finalizeSale(_defaultFinalizeParams());
+        vm.prank(admin);
+        presale.completeFinalization();
+
+        vm.warp(block.timestamp + presale.RESCUE_GRACE_PERIOD());
+
+        bytes32[] memory proof = new bytes32[](0);
+        vm.prank(address(0xA1));
+        vm.expectRevert(IPresale.PresaleAlreadyFinalized.selector);
+        presale.selfCreditClaim(500e18, 50e18, proof);
+    }
+
+    function test_SelfCreditClaim_RevertsBeforePoolCreated() public {
+        PresaleImplementation presale = _deployCreditPresale();
+
+        vm.warp(block.timestamp + presale.RESCUE_GRACE_PERIOD());
+
+        bytes32[] memory proof = new bytes32[](0);
+        vm.prank(address(0xA1));
+        vm.expectRevert(IPresale.NotPoolCreated.selector);
+        presale.selfCreditClaim(500e18, 50e18, proof);
+    }
 }

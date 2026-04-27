@@ -153,6 +153,7 @@ interface IPresale {
     error InvalidSaleType();
     error NotPoolCreated();
     error PoolAlreadyCreated();
+    error SelfCreditClaimGracePeriodActive();
 
     /*//////////////////////////////////////////////////////////////
                             EXTERNAL FUNCTIONS

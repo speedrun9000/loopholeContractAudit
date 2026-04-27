@@ -406,8 +406,11 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user1);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
+        IPresale.FinalizeParams memory creditParams = _defaultFinalizeParams();
+        creditParams.circulatingSupplyRecipient = address(0xBBBB);
+
         vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        presale.finalizeSale(creditParams);
         vm.prank(admin);
         presale.completeFinalization();
 

@@ -146,7 +146,7 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
             if (_phases[i].userAllocationCap == 0) revert InvalidPhaseConfiguration();
             if (_phases[i].userAllocationCap > _phases[i].totalPhaseCap) revert InvalidPhaseConfiguration();
 
-            if (i > 0 && _phases[i].startTime < _phases[i - 1].endTime) {
+            if (i > 0 && _phases[i].startTime <= _phases[i - 1].endTime) {
                 revert InvalidPhaseConfiguration();
             }
 

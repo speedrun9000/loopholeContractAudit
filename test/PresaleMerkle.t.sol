@@ -339,7 +339,7 @@ contract PresaleMerkleTest is Test {
             merkleRoot: merkleRoot0
         });
         phases[1] = IPresale.PresalePhaseConfig({
-            startTime: block.timestamp + 7 days,
+            startTime: block.timestamp + 7 days + 1,
             endTime: block.timestamp + 14 days,
             totalPhaseCap: 100 ether,
             userAllocationCap: 10 ether,
@@ -388,7 +388,7 @@ contract PresaleMerkleTest is Test {
         presale.deposit(0, 5 ether, new bytes32[](0));
 
         // Warp to phase 1
-        vm.warp(block.timestamp + 7 days);
+        vm.warp(block.timestamp + 7 days + 1);
 
         // User3 can deposit in phase 1
         bytes32[] memory proof3Phase1 = _getProof(whitelist1, 0);

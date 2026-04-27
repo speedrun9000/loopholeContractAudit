@@ -410,7 +410,7 @@ contract PresaleMerkleTest is Test {
     function _deployPresaleNoWhitelist() internal returns (PresaleImplementation) {
         IPresale.PresalePhaseConfig[] memory phases = new IPresale.PresalePhaseConfig[](1);
         phases[0] = IPresale.PresalePhaseConfig({
-            startTime: block.timestamp,
+            startTime: block.timestamp + 1 hours,
             endTime: block.timestamp + 7 days,
             totalPhaseCap: 100 ether,
             userAllocationCap: 10 ether,
@@ -446,13 +446,7 @@ contract PresaleMerkleTest is Test {
     function test_SetPhaseMerkleRoot() public {
         PresaleImplementation presale = _deployPresaleNoWhitelist();
 
-        // Anyone can deposit when no whitelist
-        vm.prank(user3);
-        presaleToken.approve(address(presale), type(uint256).max);
-        vm.prank(user3);
-        presale.deposit(0, 1 ether, new bytes32[](0));
-
-        // Admin sets a whitelist
+        // Admin sets a whitelist before the phase starts
         address[] memory whitelist = new address[](2);
         whitelist[0] = user1;
         whitelist[1] = user2;
@@ -465,7 +459,12 @@ contract PresaleMerkleTest is Test {
         IPresale.PresalePhaseConfig memory phase = presale.getPhaseInfo(0);
         assertEq(phase.merkleRoot, newRoot);
 
-        // user3 can no longer deposit (not in new whitelist)
+        // Warp to phase start
+        vm.warp(phase.startTime);
+
+        // user3 cannot deposit (not in whitelist)
+        vm.prank(user3);
+        presaleToken.approve(address(presale), type(uint256).max);
         vm.prank(user3);
         vm.expectRevert(IPresale.UserNotWhitelisted.selector);
         presale.deposit(0, 1 ether, new bytes32[](0));
@@ -501,7 +500,7 @@ contract PresaleMerkleTest is Test {
 
         IPresale.PresalePhaseConfig[] memory phases = new IPresale.PresalePhaseConfig[](1);
         phases[0] = IPresale.PresalePhaseConfig({
-            startTime: block.timestamp,
+            startTime: block.timestamp + 1 hours,
             endTime: block.timestamp + 7 days,
             totalPhaseCap: 100 ether,
             userAllocationCap: 10 ether,
@@ -533,18 +532,16 @@ contract PresaleMerkleTest is Test {
         address presaleAddr = factory.deployPresale(phases, config, bFactoryParams, address(presaleToken));
         PresaleImplementation presale = PresaleImplementation(payable(presaleAddr));
 
-        // user3 cannot deposit (not whitelisted)
-        vm.prank(user3);
-        presaleToken.approve(address(presale), type(uint256).max);
-        vm.prank(user3);
-        vm.expectRevert(IPresale.UserNotWhitelisted.selector);
-        presale.deposit(0, 1 ether, new bytes32[](0));
-
-        // Admin clears the whitelist
+        // Admin clears the whitelist before the phase starts
         vm.prank(admin);
         presale.setPhaseMerkleRoot(0, bytes32(0));
 
+        // Warp to phase start
+        vm.warp(phases[0].startTime);
+
         // Now anyone can deposit
+        vm.prank(user3);
+        presaleToken.approve(address(presale), type(uint256).max);
         vm.prank(user3);
         presale.deposit(0, 1 ether, new bytes32[](0));
 
@@ -661,6 +658,17 @@ contract PresaleMerkleTest is Test {
 
         vm.prank(admin);
         vm.expectRevert(IPresale.PresaleAlreadyCancelled.selector);
+        presale.setPhaseMerkleRoot(0, keccak256("root"));
+    }
+
+    function test_SetPhaseMerkleRoot_RevertAfterPhaseStarted() public {
+        PresaleImplementation presale = _deployPresaleNoWhitelist();
+
+        IPresale.PresalePhaseConfig memory phase = presale.getPhaseInfo(0);
+        vm.warp(phase.startTime);
+
+        vm.prank(admin);
+        vm.expectRevert(IPresale.PhaseAlreadyStarted.selector);
         presale.setPhaseMerkleRoot(0, keccak256("root"));
     }
 }

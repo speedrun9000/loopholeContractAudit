@@ -133,6 +133,7 @@ contract PresaleCreditBatchTest is Test {
         PresaleImplementation presale = _deployCreditPresale();
 
         // Step 1: finalizeSale creates pool
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -175,6 +176,7 @@ contract PresaleCreditBatchTest is Test {
     function test_MultipleBatches() public {
         PresaleImplementation presale = _deployCreditPresale();
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -238,6 +240,7 @@ contract PresaleCreditBatchTest is Test {
     function test_DepositsBlockedAfterPoolCreated() public {
         PresaleImplementation presale = _deployCreditPresale();
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -255,6 +258,7 @@ contract PresaleCreditBatchTest is Test {
     function test_CancelBlockedAfterPoolCreated() public {
         PresaleImplementation presale = _deployCreditPresale();
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -278,6 +282,7 @@ contract PresaleCreditBatchTest is Test {
     function test_ClaimCreditBatch_RevertsAfterFinalized() public {
         PresaleImplementation presale = _deployCreditPresale();
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
         vm.prank(admin);
@@ -291,6 +296,7 @@ contract PresaleCreditBatchTest is Test {
     function test_ClaimCreditBatch_RevertsNonAdmin() public {
         PresaleImplementation presale = _deployCreditPresale();
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -343,6 +349,7 @@ contract PresaleCreditBatchTest is Test {
         vm.prank(depositor);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -397,6 +404,7 @@ contract PresaleCreditBatchTest is Test {
         vm.prank(depositor);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -416,6 +424,7 @@ contract PresaleCreditBatchTest is Test {
     function test_CompleteFinalization_RevertsNonAdmin() public {
         PresaleImplementation presale = _deployCreditPresale();
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -427,6 +436,7 @@ contract PresaleCreditBatchTest is Test {
     function test_CompleteFinalization_RevertsDoubleComplete() public {
         PresaleImplementation presale = _deployCreditPresale();
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
         vm.prank(admin);
@@ -448,6 +458,7 @@ contract PresaleCreditBatchTest is Test {
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.circulatingSupplyRecipient = recipient;
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(params);
 

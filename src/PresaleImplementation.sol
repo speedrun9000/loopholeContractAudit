@@ -267,7 +267,15 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
         nonReentrant
     {
         if (poolCreated) revert PoolAlreadyCreated();
-        if (totalRaised < config.softCap) revert SoftCapNotReached();
+        // Finalization is allowed only when:
+        //   - all phases have ended AND soft cap is met, or
+        //   - hard cap has been reached (early finalize, since no further deposits are possible)
+        bool phasesEnded = allPhasesEnded();
+        bool hardCapMet = totalRaised >= config.hardCap;
+        bool softCapMet = totalRaised >= config.softCap;
+        if (!((phasesEnded && softCapMet) || (!phasesEnded && hardCapMet))) {
+            revert PresaleNotFinalizable();
+        }
         if (params.bpsToTreasury > 10_000) revert InvalidFundSplit();
         if (params.bpsToTreasury > 0 && params.acquisitionTreasury == address(0)) revert InvalidFundSplit();
         // feeRouter is set via CreateParams.feeRecipient at pool creation

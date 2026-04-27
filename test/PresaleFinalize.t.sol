@@ -148,6 +148,7 @@ contract PresaleFinalizeTest is Test {
         params.acquisitionTreasury = treasury;
         params.bpsToTreasury = 5000; // 50%
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(params);
 
@@ -163,6 +164,7 @@ contract PresaleFinalizeTest is Test {
         uint256 raised = 100 ether;
         PresaleImplementation presale = _deployAndFundPresale(50 ether, 200 ether, raised);
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
         vm.prank(admin);
@@ -179,6 +181,7 @@ contract PresaleFinalizeTest is Test {
         params.acquisitionTreasury = treasury;
         params.bpsToTreasury = 10_001; // > 10000
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         vm.expectRevert(IPresale.InvalidFundSplit.selector);
         presale.finalizeSale(params);
@@ -191,6 +194,7 @@ contract PresaleFinalizeTest is Test {
         params.acquisitionTreasury = address(0);
         params.bpsToTreasury = 5000;
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         vm.expectRevert(IPresale.InvalidFundSplit.selector);
         presale.finalizeSale(params);
@@ -208,6 +212,7 @@ contract PresaleFinalizeTest is Test {
         params.initialCollateral = 500 ether;
         params.initialDebt = 50 ether;
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(params);
 
@@ -245,6 +250,7 @@ contract PresaleFinalizeTest is Test {
             circulatingSupplyRecipient: address(0)
         });
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(params);
 
@@ -274,6 +280,7 @@ contract PresaleFinalizeTest is Test {
         params.initialDebt = 80e18;
         params.baseline = address(mockBaseline);
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(params);
 
@@ -340,6 +347,7 @@ contract PresaleFinalizeTest is Test {
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.baseline = address(mockBaseline);
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(params);
         vm.prank(admin);
@@ -356,5 +364,39 @@ contract PresaleFinalizeTest is Test {
         vm.prank(admin);
         vm.expectRevert(IPresale.NotPoolCreated.selector);
         presale.completeFinalization();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                  FINALIZATION GATING (PHASES + CAPS)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_FinalizeRevertsBeforePhasesEndedAndUnderHardCap() public {
+        // Soft cap met (100 >= 50) but phases still active and hard cap (200) not met
+        PresaleImplementation presale = _deployAndFundPresale(50 ether, 200 ether, 100 ether);
+
+        vm.prank(admin);
+        vm.expectRevert(IPresale.PresaleNotFinalizable.selector);
+        presale.finalizeSale(_defaultFinalizeParams());
+    }
+
+    function test_FinalizeAllowedEarlyWhenHardCapMet() public {
+        // Hard cap exactly met, phases still active — early finalize should succeed
+        PresaleImplementation presale = _deployAndFundPresale(50 ether, 200 ether, 200 ether);
+
+        vm.prank(admin);
+        presale.finalizeSale(_defaultFinalizeParams());
+
+        assertTrue(presale.poolCreated());
+    }
+
+    function test_FinalizeRevertsAfterPhasesEndedUnderSoftCap() public {
+        // Phases ended but soft cap (50) not met — must revert
+        PresaleImplementation presale = _deployAndFundPresale(50 ether, 200 ether, 30 ether);
+
+        vm.warp(block.timestamp + 8 days);
+
+        vm.prank(admin);
+        vm.expectRevert(IPresale.PresaleNotFinalizable.selector);
+        presale.finalizeSale(_defaultFinalizeParams());
     }
 }

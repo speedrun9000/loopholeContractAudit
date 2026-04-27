@@ -168,6 +168,7 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
 
     /**
      * @notice Set the phase merkle root (whitelist) after deployment, for the specified `phaseId` to `merkleRoot`
+     * @dev Reverts if the phase has already started.
      * @param phaseId Phase ID to update
      * @param merkleRoot New merkle root
      */
@@ -179,6 +180,7 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
     {
         if (poolCreated) revert PoolAlreadyCreated();
         if (phaseId >= phases.length) revert InvalidPhaseId();
+        if (block.timestamp >= phases[phaseId].startTime) revert PhaseAlreadyStarted();
 
         bytes32 oldRoot = phases[phaseId].merkleRoot;
         phases[phaseId].merkleRoot = merkleRoot;

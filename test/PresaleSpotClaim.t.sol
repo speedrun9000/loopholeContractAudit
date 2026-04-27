@@ -89,7 +89,7 @@ contract PresaleSpotClaimTest is Test {
             merkleRoot: bytes32(0)
         });
         phases[1] = IPresale.PresalePhaseConfig({
-            startTime: block.timestamp + 3 days,
+            startTime: block.timestamp + 3 days + 1,
             endTime: block.timestamp + 7 days,
             totalPhaseCap: 100 ether,
             userAllocationCap: 50 ether,
@@ -227,7 +227,7 @@ contract PresaleSpotClaimTest is Test {
         presale.deposit(0, 30 ether, new bytes32[](0));
 
         // Warp to phase 1
-        vm.warp(block.timestamp + 3 days);
+        vm.warp(block.timestamp + 3 days + 1);
 
         // Deposit in phase 1
         vm.prank(user1);
@@ -690,14 +690,14 @@ contract PresaleSpotClaimTest is Test {
             merkleRoot: bytes32(0)
         });
         phases[1] = IPresale.PresalePhaseConfig({
-            startTime: startTime + 3 days,
+            startTime: startTime + 3 days + 1,
             endTime: startTime + 6 days,
             totalPhaseCap: 5000 ether,
             userAllocationCap: 100 ether,
             merkleRoot: bytes32(0)
         });
         phases[2] = IPresale.PresalePhaseConfig({
-            startTime: startTime + 6 days,
+            startTime: startTime + 6 days + 1,
             endTime: startTime + 10 days,
             totalPhaseCap: 5000 ether,
             userAllocationCap: 100 ether,
@@ -751,7 +751,7 @@ contract PresaleSpotClaimTest is Test {
         }
 
         // Phase 1: users 10-40 deposit
-        vm.warp(startTime + 3 days);
+        vm.warp(startTime + 3 days + 1);
         for (uint256 i = 10; i < 40; i++) {
             uint256 amount = bound(uint256(keccak256(abi.encode(seed, "p1", i))), 1 ether, 100 ether);
             vm.prank(users[i]);
@@ -761,7 +761,7 @@ contract PresaleSpotClaimTest is Test {
         }
 
         // Phase 2: users 20-49 deposit
-        vm.warp(startTime + 6 days);
+        vm.warp(startTime + 6 days + 1);
         for (uint256 i = 20; i < numUsers; i++) {
             uint256 amount = bound(uint256(keccak256(abi.encode(seed, "p2", i))), 1 ether, 100 ether);
             vm.prank(users[i]);

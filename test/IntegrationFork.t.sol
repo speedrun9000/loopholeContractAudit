@@ -442,6 +442,8 @@ contract IntegrationForkTest is Test {
         // emit log_named_uint("reserveBalance", reserveBalance);
         // emit log_named_uint("poolReserves", poolReserves);
 
+        vm.warp(block.timestamp + 11 days);
+
         vm.prank(adminAddress);
         presale.finalizeSale(
             IPresale.FinalizeParams({
@@ -583,6 +585,8 @@ contract IntegrationForkTest is Test {
         // Authorize the presale as a credit deployer on baseline
         vm.prank(baselineAdmin);
         bController.setApprovedCreditDeployer(address(factory), true);
+
+        vm.warp(block.timestamp + 8 days);
 
         // Finalize (creates pool, enters intermediate state)
         vm.prank(adminAddress);
@@ -758,6 +762,8 @@ contract IntegrationForkTest is Test {
         uint256 reserveBalance = presaleToken.balanceOf(address(presale));
         uint256 bookPrice = ((reserveBalance + 0) * 1e18) / initialCirculatingSupply;
         uint256 initialActivePrice = (bookPrice * 105) / 100;
+
+        vm.warp(block.timestamp + 8 days);
 
         // Finalize spot sale
         vm.prank(adminAddress);

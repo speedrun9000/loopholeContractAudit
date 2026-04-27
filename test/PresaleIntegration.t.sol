@@ -200,6 +200,9 @@ contract PresaleIntegrationTest is Test {
         assertEq(presale.getUserDepositedAmount(users[5], 1), 10 ether);
         assertEq(presale.getUserDepositedAmount(users[5], 2), 10 ether);
 
+        // Warp past the last phase end so finalization is allowed (soft cap met)
+        vm.warp(block.timestamp + 6 days);
+
         // Finalize presale (credit path: creates pool, enters intermediate state)
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());

@@ -11,6 +11,10 @@ import {IBCredit} from "./interfaces/IBCredit.sol";
 import {BFactory} from "./interfaces/IBFactory.sol";
 import {IPresaleFactory} from "./interfaces/IPresaleFactory.sol";
 
+interface IFeeRouter {
+    function forwarderOf(address bToken) external view returns (address);
+}
+
 /**
  * @title PresaleImplementation
  * @notice Implementation contract for presale logic using beacon proxy pattern
@@ -297,6 +301,19 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
         // Remainder goes to pool
         uint256 poolReserves = reserveBalance - treasuryAmount;
 
+        // Precompute the bToken address so we can resolve its fee forwarder before
+        // pool creation. BFactory salts deployments with msg.sender (= presaleFactory).
+        BFactory bFactoryRef = IPresaleFactory(presaleFactory).bFactory();
+        address predictedBToken = bFactoryRef.precomputeBTokenAddress(
+            params.name, params.symbol, totalSupply, params.salt, presaleFactory
+        );
+
+        // The admin must have called router.registerBToken(predictedBToken, reserve)
+        // before finalizeSale; that's what deploys the dedicated forwarder this pool
+        // will pay fees into.
+        address forwarder = IFeeRouter(params.feeRouter).forwarderOf(predictedBToken);
+        if (forwarder == address(0)) revert InvalidFeeRouting();
+
         // Build pool creation params (bToken is set by the factory)
         BFactory.CreateParams memory createParams = BFactory.CreateParams({
             bToken: address(0),
@@ -305,7 +322,7 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
             initialPoolReserves: poolReserves,
             initialActivePrice: params.initialActivePrice,
             initialBLV: bFactoryParams.initialBLV,
-            feeRecipient: params.feeRouter,
+            feeRecipient: forwarder,
             creator: bFactoryParams.creator,
             creatorFeePct: bFactoryParams.creatorFeePct,
             swapFeePct: bFactoryParams.swapFeePct,
@@ -321,6 +338,7 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
         address bToken = IPresaleFactory(presaleFactory).createBTokenAndPool(
             params.name, params.symbol, totalSupply, params.salt, createParams, poolReserves
         );
+        if (bToken != predictedBToken) revert BTokenAddressMismatch();
 
         // Store created token
         createdToken = bToken;

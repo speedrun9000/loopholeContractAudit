@@ -130,11 +130,10 @@ contract IntegrationForkTest is Test {
         vm.prank(owner);
         afterburner.setAuthorizedFunder(funder, true);
 
-        // Register bTokens and configure
+        // bTokens were already registered (with their forwarders) by the
+        // _test_integration_EndToEnd_SuccessfulPresale helper before each finalizeSale.
+        // Set fee splits now that recipient addresses are known.
         vm.startPrank(owner);
-
-        router.registerBToken(address(loopBToken), address(reserveToken));
-        router.registerBToken(address(lstBToken), address(loopBToken));
 
         // LST: 6667 treasury, 3333 royalties
         router.setConfig(
@@ -442,6 +441,15 @@ contract IntegrationForkTest is Test {
         // emit log_named_uint("reserveBalance", reserveBalance);
         // emit log_named_uint("poolReserves", poolReserves);
 
+        // Pre-register the bToken on the router so finalizeSale can resolve its forwarder.
+        bytes32 _salt = bytes32(++saltCounter);
+        {
+            address predicted =
+                bFactory.precomputeBTokenAddress("Test Token", "TEST", totalSupply, _salt, address(factory));
+            vm.prank(owner);
+            router.registerBToken(predicted, address(_presaleToken));
+        }
+
         vm.prank(adminAddress);
         presale.finalizeSale(
             IPresale.FinalizeParams({
@@ -456,7 +464,7 @@ contract IntegrationForkTest is Test {
                 bpsToTreasury: bpsToTreasury,
                 feeRouter: address(router),
                 baseline: baseline,
-                salt: bytes32(++saltCounter),
+                salt: _salt,
                 circulatingSupplyRecipient: address(0)
             })
         );
@@ -584,6 +592,15 @@ contract IntegrationForkTest is Test {
         vm.prank(baselineAdmin);
         bController.setApprovedCreditDeployer(address(factory), true);
 
+        // Pre-register the bToken on the router so finalizeSale can resolve its forwarder.
+        bytes32 _salt = bytes32(++saltCounter);
+        {
+            address predicted =
+                bFactory.precomputeBTokenAddress("ClaimTest", "CT", totalSupply, _salt, address(factory));
+            vm.prank(owner);
+            router.registerBToken(predicted, address(presaleToken));
+        }
+
         // Finalize (creates pool, enters intermediate state)
         vm.prank(adminAddress);
         presale.finalizeSale(
@@ -599,7 +616,7 @@ contract IntegrationForkTest is Test {
                 bpsToTreasury: 0,
                 feeRouter: address(router),
                 baseline: baseline,
-                salt: bytes32(++saltCounter),
+                salt: _salt,
                 circulatingSupplyRecipient: address(0)
             })
         );
@@ -759,6 +776,15 @@ contract IntegrationForkTest is Test {
         uint256 bookPrice = ((reserveBalance + 0) * 1e18) / initialCirculatingSupply;
         uint256 initialActivePrice = (bookPrice * 105) / 100;
 
+        // Pre-register the bToken on the router so finalizeSale can resolve its forwarder.
+        bytes32 _salt = bytes32(++saltCounter);
+        {
+            address predicted =
+                bFactory.precomputeBTokenAddress("Spot Test", "STEST", totalSupply, _salt, address(factory));
+            vm.prank(owner);
+            router.registerBToken(predicted, address(presaleToken));
+        }
+
         // Finalize spot sale
         vm.prank(adminAddress);
         presale.finalizeSale(
@@ -774,7 +800,7 @@ contract IntegrationForkTest is Test {
                 bpsToTreasury: 0,
                 feeRouter: address(router),
                 baseline: baseline,
-                salt: bytes32(++saltCounter),
+                salt: _salt,
                 circulatingSupplyRecipient: address(0)
             })
         );

@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {PresaleFactory} from "../src/PresaleFactory.sol";
 import {PresaleImplementation} from "../src/PresaleImplementation.sol";
+import {ProjectFeeRouterUpgradeable} from "../src/ProjectFeeRouterUpgradeable.sol";
 import {IPresale} from "../src/interfaces/IPresale.sol";
 import {MockBFactory} from "./mocks/MockBFactory.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
@@ -51,10 +52,10 @@ contract PresaleFinalizeTest is Test {
     MockBFactory public bFactory;
     UpgradeableBeacon public beacon;
     MockERC20 public presaleToken;
+    ProjectFeeRouterUpgradeable public router;
 
     address public admin = address(0x3);
     address public treasury = address(0x7777);
-    address public feeRouter = address(0x8888);
 
     function setUp() public {
         bFactory = new MockBFactory();
@@ -67,6 +68,26 @@ contract PresaleFinalizeTest is Test {
         );
         factory = PresaleFactory(address(factoryProxy));
         presaleToken = new MockERC20("Reserve", "RSV", 18);
+
+        // Real ProjectFeeRouter so finalizeSale can resolve the per-bToken forwarder.
+        ProjectFeeRouterUpgradeable routerImpl = new ProjectFeeRouterUpgradeable();
+        ERC1967Proxy routerProxy = new ERC1967Proxy(
+            address(routerImpl), abi.encodeCall(routerImpl.initialize, (admin))
+        );
+        router = ProjectFeeRouterUpgradeable(address(routerProxy));
+    }
+
+    /// @dev Pre-register the bToken on the router (deploys forwarder) and finalize.
+    function _registerAndFinalize(PresaleImplementation presale, IPresale.FinalizeParams memory params) internal {
+        uint256 totalSupply = ((1_000_000 ether + params.initialCollateral) * 10_500) / 10_000;
+        address predicted = bFactory.precomputeBTokenAddress(
+            params.name, params.symbol, totalSupply, params.salt, address(factory)
+        );
+        vm.prank(admin);
+        router.registerBToken(predicted, address(presaleToken));
+        params.feeRouter = address(router);
+        vm.prank(admin);
+        presale.finalizeSale(params);
     }
 
     function _deployAndFundPresale(uint256 softCap, uint256 hardCap, uint256 depositAmount)
@@ -148,8 +169,7 @@ contract PresaleFinalizeTest is Test {
         params.acquisitionTreasury = treasury;
         params.bpsToTreasury = 5000; // 50%
 
-        vm.prank(admin);
-        presale.finalizeSale(params);
+        _registerAndFinalize(presale, params);
 
         // Credit sale: complete finalization
         vm.prank(admin);
@@ -163,8 +183,7 @@ contract PresaleFinalizeTest is Test {
         uint256 raised = 100 ether;
         PresaleImplementation presale = _deployAndFundPresale(50 ether, 200 ether, raised);
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
         vm.prank(admin);
         presale.completeFinalization();
 
@@ -208,8 +227,7 @@ contract PresaleFinalizeTest is Test {
         params.initialCollateral = 500 ether;
         params.initialDebt = 50 ether;
 
-        vm.prank(admin);
-        presale.finalizeSale(params);
+        _registerAndFinalize(presale, params);
 
         // Not yet fully finalized (credit sale)
         assertFalse(presale.isFinalized());
@@ -245,8 +263,7 @@ contract PresaleFinalizeTest is Test {
             circulatingSupplyRecipient: address(0)
         });
 
-        vm.prank(admin);
-        presale.finalizeSale(params);
+        _registerAndFinalize(presale, params);
 
         // 30% of 200 = 60 to treasury
         assertEq(presaleToken.balanceOf(treasury), 60 ether);
@@ -274,8 +291,7 @@ contract PresaleFinalizeTest is Test {
         params.initialDebt = 80e18;
         params.baseline = address(mockBaseline);
 
-        vm.prank(admin);
-        presale.finalizeSale(params);
+        _registerAndFinalize(presale, params);
 
         // Set up claim credit data for 2 users
         address[] memory users = new address[](2);
@@ -340,8 +356,7 @@ contract PresaleFinalizeTest is Test {
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.baseline = address(mockBaseline);
 
-        vm.prank(admin);
-        presale.finalizeSale(params);
+        _registerAndFinalize(presale, params);
         vm.prank(admin);
         presale.completeFinalization();
 

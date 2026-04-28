@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {PresaleFactory} from "../src/PresaleFactory.sol";
 import {PresaleImplementation} from "../src/PresaleImplementation.sol";
+import {ProjectFeeRouterUpgradeable} from "../src/ProjectFeeRouterUpgradeable.sol";
 import {IPresale} from "../src/interfaces/IPresale.sol";
 import {MockBFactory} from "./mocks/MockBFactory.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
@@ -18,6 +19,7 @@ contract PresaleIntegrationTest is Test {
     UpgradeableBeacon public beacon;
     Merkle public merkle;
     MockERC20 public presaleToken;
+    ProjectFeeRouterUpgradeable public router;
 
     address public admin = address(0x3);
 
@@ -33,6 +35,28 @@ contract PresaleIntegrationTest is Test {
         factory = PresaleFactory(address(factoryProxy));
         merkle = new Merkle();
         presaleToken = new MockERC20("Presale Token", "PRESALE", 18);
+
+        ProjectFeeRouterUpgradeable routerImpl = new ProjectFeeRouterUpgradeable();
+        ERC1967Proxy routerProxy = new ERC1967Proxy(
+            address(routerImpl), abi.encodeCall(routerImpl.initialize, (admin))
+        );
+        router = ProjectFeeRouterUpgradeable(address(routerProxy));
+    }
+
+    /// @dev Pre-register the bToken on the router (deploys forwarder) and finalize.
+    function _registerAndFinalize(PresaleImplementation presale, IPresale.FinalizeParams memory params) internal {
+        IPresale.BFactoryParams memory bfp = presale.getBFactoryParams();
+        uint16 circulatingBps = presale.circulatingSupplyBps();
+        uint256 totalSupply =
+            ((bfp.initialPoolBTokens + params.initialCollateral) * (10_000 + circulatingBps)) / 10_000;
+        address predicted = bFactory.precomputeBTokenAddress(
+            params.name, params.symbol, totalSupply, params.salt, address(factory)
+        );
+        vm.prank(admin);
+        router.registerBToken(predicted, address(presaleToken));
+        params.feeRouter = address(router);
+        vm.prank(admin);
+        presale.finalizeSale(params);
     }
 
     function _hashLeaf(address account) internal pure returns (bytes32) {
@@ -201,8 +225,7 @@ contract PresaleIntegrationTest is Test {
         assertEq(presale.getUserDepositedAmount(users[5], 2), 10 ether);
 
         // Finalize presale (credit path: creates pool, enters intermediate state)
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Verify intermediate state
         assertTrue(presale.poolCreated(), "pool should be created");

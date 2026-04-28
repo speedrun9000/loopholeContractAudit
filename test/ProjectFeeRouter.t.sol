@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {ProjectFeeRouterUpgradeable} from "../src/ProjectFeeRouterUpgradeable.sol";
+import {BTokenFeeForwarder} from "../src/BTokenFeeForwarder.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -25,6 +26,9 @@ contract ProjectFeeRouterTest is Test {
     address public lstBToken = address(0xA1);
     address public loopBToken = address(0xA2);
 
+    BTokenFeeForwarder public lstForwarder;
+    BTokenFeeForwarder public loopForwarder;
+
     function setUp() public {
         reserveToken = new MockERC20("Reserve", "RSV", 18);
         treasury = address(new MockFeeRecipient());
@@ -38,8 +42,8 @@ contract ProjectFeeRouterTest is Test {
         // Register bTokens and configure
         vm.startPrank(owner);
 
-        router.registerBToken(lstBToken, address(reserveToken));
-        router.registerBToken(loopBToken, address(reserveToken));
+        lstForwarder = BTokenFeeForwarder(router.registerBToken(lstBToken, address(reserveToken)));
+        loopForwarder = BTokenFeeForwarder(router.registerBToken(loopBToken, address(reserveToken)));
 
         // LST: 6667 treasury, 3333 royalties
         router.setConfig(
@@ -74,6 +78,12 @@ contract ProjectFeeRouterTest is Test {
         vm.stopPrank();
     }
 
+    /// @dev Simulate a pool depositing creator fees to the bToken's forwarder, then push them.
+    function _depositAndFlush(BTokenFeeForwarder forwarder, uint256 amount) internal {
+        reserveToken.mint(address(forwarder), amount);
+        forwarder.flush();
+    }
+
     /*//////////////////////////////////////////////////////////////
                          LST SPLIT TESTS
     //////////////////////////////////////////////////////////////*/
@@ -81,8 +91,7 @@ contract ProjectFeeRouterTest is Test {
     function test_LST_SweepSplits6667_3333() public {
         uint256 feeAmount = 3 ether; // Simulates 3% creator stream from a 4% total fee
 
-        // Simulate fees arriving at router
-        reserveToken.mint(address(router), feeAmount);
+        _depositAndFlush(lstForwarder, feeAmount);
 
         // Anyone can sweep
         router.sweep(lstBToken);
@@ -99,15 +108,13 @@ contract ProjectFeeRouterTest is Test {
     }
 
     function test_LST_SweepExactMath() public {
-        // Use 10000 tokens for clean math
         uint256 feeAmount = 10_000e18;
-        reserveToken.mint(address(router), feeAmount);
+        _depositAndFlush(lstForwarder, feeAmount);
 
         router.sweep(lstBToken);
 
         assertEq(reserveToken.balanceOf(treasury), 6667e18); // 6667/10000
         assertEq(reserveToken.balanceOf(royalties), 3333e18); // 3333/10000
-        // No remainder when amount is divisible
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -115,9 +122,8 @@ contract ProjectFeeRouterTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_LOOP_SweepAllToTeam() public {
-        uint256 feeAmount = 1 ether; // Simulates 1% creator stream from a 2% total fee
-
-        reserveToken.mint(address(router), feeAmount);
+        uint256 feeAmount = 1 ether;
+        _depositAndFlush(loopForwarder, feeAmount);
 
         router.sweep(loopBToken);
 
@@ -126,11 +132,10 @@ contract ProjectFeeRouterTest is Test {
 
     function test_LOOP_SweepExactMath() public {
         uint256 feeAmount = 777e18;
-        reserveToken.mint(address(router), feeAmount);
+        _depositAndFlush(loopForwarder, feeAmount);
 
         router.sweep(loopBToken);
 
-        // 10000 bps = 100%, no remainder
         assertEq(reserveToken.balanceOf(team), feeAmount);
     }
 
@@ -139,31 +144,24 @@ contract ProjectFeeRouterTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RemainderGoesToTreasuryWhenSet() public {
-        // Use an amount that produces rounding: 1 wei
-        uint256 feeAmount = 1;
-        reserveToken.mint(address(router), feeAmount);
+        _depositAndFlush(lstForwarder, 1);
 
         router.sweep(lstBToken);
 
-        // 6667/10000 * 1 = 0, 3333/10000 * 1 = 0, remainder = 1
-        // Remainder goes to treasury (acquisitionTreasury is set)
+        // 6667/10000 * 1 = 0, 3333/10000 * 1 = 0, remainder = 1 → treasury (set)
         assertEq(reserveToken.balanceOf(treasury), 1);
         assertEq(reserveToken.balanceOf(royalties), 0);
     }
 
     function test_RemainderGoesToTeamWhenNoTreasury() public {
-        // LOOP config has no treasury, remainder goes to team
-        uint256 feeAmount = 3; // Small amount to trigger rounding edge case
-        reserveToken.mint(address(router), feeAmount);
+        _depositAndFlush(loopForwarder, 3);
 
         router.sweep(loopBToken);
 
-        // 10000/10000 * 3 = 3, no remainder actually. Try something that rounds.
         assertEq(reserveToken.balanceOf(team), 3);
     }
 
     function test_SumOfTransfersNeverExceedsDelta() public {
-        // Fuzz-like: try many values
         uint256[] memory amounts = new uint256[](5);
         amounts[0] = 1;
         amounts[1] = 7;
@@ -172,7 +170,7 @@ contract ProjectFeeRouterTest is Test {
         amounts[4] = type(uint128).max;
 
         for (uint256 i = 0; i < amounts.length; i++) {
-            // Reset balances by deploying fresh
+            // Reset by deploying fresh
             MockERC20 freshToken = new MockERC20("Fresh", "F", 18);
             ProjectFeeRouterUpgradeable impl = new ProjectFeeRouterUpgradeable();
             bytes memory initData = abi.encodeCall(impl.initialize, (owner));
@@ -180,7 +178,7 @@ contract ProjectFeeRouterTest is Test {
             ProjectFeeRouterUpgradeable freshRouter = ProjectFeeRouterUpgradeable(address(proxy));
 
             vm.startPrank(owner);
-            freshRouter.registerBToken(lstBToken, address(freshToken));
+            address forwarder = freshRouter.registerBToken(lstBToken, address(freshToken));
             freshRouter.setConfig(
                 lstBToken,
                 ProjectFeeRouterUpgradeable.FeeConfig(6667, 3333, 0, 0, 0),
@@ -188,11 +186,13 @@ contract ProjectFeeRouterTest is Test {
             );
             vm.stopPrank();
 
-            freshToken.mint(address(freshRouter), amounts[i]);
+            freshToken.mint(forwarder, amounts[i]);
+            BTokenFeeForwarder(forwarder).flush();
             freshRouter.sweep(lstBToken);
 
-            // Router should have 0 left for this bToken
+            // Router holds nothing (everything distributed); forwarder is empty.
             assertEq(freshToken.balanceOf(address(freshRouter)), 0);
+            assertEq(freshToken.balanceOf(forwarder), 0);
         }
     }
 
@@ -201,18 +201,15 @@ contract ProjectFeeRouterTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_MultipleSweepsAccumulateCorrectly() public {
-        // First fee arrival
-        reserveToken.mint(address(router), 1 ether);
+        _depositAndFlush(lstForwarder, 1 ether);
         router.sweep(lstBToken);
 
         uint256 treasuryAfterFirst = reserveToken.balanceOf(treasury);
         uint256 royaltiesAfterFirst = reserveToken.balanceOf(royalties);
 
-        // Second fee arrival
-        reserveToken.mint(address(router), 2 ether);
+        _depositAndFlush(lstForwarder, 2 ether);
         router.sweep(lstBToken);
 
-        // Second sweep should only distribute the new 2 ether delta
         uint256 expectedTreasury2 = (2 ether * 6667) / 10_000;
         uint256 expectedRoyalties2 = (2 ether * 3333) / 10_000;
         uint256 remainder2 = 2 ether - expectedTreasury2 - expectedRoyalties2;
@@ -221,9 +218,87 @@ contract ProjectFeeRouterTest is Test {
         assertEq(reserveToken.balanceOf(royalties), royaltiesAfterFirst + expectedRoyalties2);
     }
 
+    function test_MultipleFlushesBeforeSweep_AccumulateAccrued() public {
+        _depositAndFlush(lstForwarder, 1 ether);
+        _depositAndFlush(lstForwarder, 2 ether);
+        // accrued[lstBToken] should be 3 ether at this point
+        assertEq(router.accrued(lstBToken), 3 ether);
+
+        router.sweep(lstBToken);
+
+        uint256 expectedTreasury = (3 ether * 6667) / 10_000;
+        uint256 expectedRoyalties = (3 ether * 3333) / 10_000;
+        uint256 remainder = 3 ether - expectedTreasury - expectedRoyalties;
+        assertEq(reserveToken.balanceOf(treasury), expectedTreasury + remainder);
+        assertEq(reserveToken.balanceOf(royalties), expectedRoyalties);
+        assertEq(router.accrued(lstBToken), 0);
+    }
+
     function test_SweepRevertsWhenNothingNew() public {
         vm.expectRevert(ProjectFeeRouterUpgradeable.NothingToSweep.selector);
         router.sweep(lstBToken);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              CROSS-BTOKEN SEGREGATION (audit regression)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Audit PoC inverted: with per-bToken forwarders, fees for one bToken
+    ///         can no longer be swept under another bToken's config even when both
+    ///         share the same reserve token.
+    function test_FeesSegregatedAcrossBTokensSharingReserve() public {
+        assertEq(reserveToken.balanceOf(treasury), 0);
+        assertEq(reserveToken.balanceOf(royalties), 0);
+        assertEq(reserveToken.balanceOf(team), 0);
+        assertEq(router.reserve(loopBToken), router.reserve(lstBToken), "reserve token shared");
+
+        // Fees accrue for both bTokens — but to distinct addresses now.
+        uint256 lstFees = 1 ether;
+        uint256 loopFees = 2 ether;
+        _depositAndFlush(lstForwarder, lstFees);
+        _depositAndFlush(loopForwarder, loopFees);
+
+        // LST sweep gets exactly LST's fees, not the combined pot.
+        router.sweep(lstBToken);
+        uint256 lstTreasury = (lstFees * 6667) / 10_000;
+        uint256 lstRoyalties = (lstFees * 3333) / 10_000;
+        uint256 lstRemainder = lstFees - lstTreasury - lstRoyalties;
+        assertEq(reserveToken.balanceOf(treasury), lstTreasury + lstRemainder, "LST treasury exact");
+        assertEq(reserveToken.balanceOf(royalties), lstRoyalties, "LST royalties exact");
+
+        // LOOP sweep still works and gets LOOP's fees.
+        router.sweep(loopBToken);
+        assertEq(reserveToken.balanceOf(team), loopFees, "LOOP team exact");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                       FORWARDER / RECEIVE FEES
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ReceiveFees_RevertsForNonForwarder() public {
+        vm.expectRevert(ProjectFeeRouterUpgradeable.OnlyForwarder.selector);
+        vm.prank(address(0xBAD));
+        router.receiveFees(lstBToken, 1 ether);
+    }
+
+    function test_ReceiveFees_RevertsForWrongBToken() public {
+        // The LOOP forwarder cannot credit LST: msg.sender check fails since
+        // forwarderOf[lstBToken] != address(loopForwarder).
+        reserveToken.mint(address(loopForwarder), 1 ether);
+        vm.prank(address(loopForwarder));
+        vm.expectRevert(ProjectFeeRouterUpgradeable.OnlyForwarder.selector);
+        router.receiveFees(lstBToken, 1 ether);
+    }
+
+    function test_Forwarder_FlushRevertsAtZeroBalance() public {
+        vm.expectRevert(BTokenFeeForwarder.NothingToFlush.selector);
+        lstForwarder.flush();
+    }
+
+    function test_Register_RevertsOnSecondRegister() public {
+        vm.prank(owner);
+        vm.expectRevert(ProjectFeeRouterUpgradeable.BTokenAlreadyRegistered.selector);
+        router.registerBToken(lstBToken, address(reserveToken));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -247,9 +322,8 @@ contract ProjectFeeRouterTest is Test {
     }
 
     function test_SweepIsPermissionless() public {
-        reserveToken.mint(address(router), 1 ether);
+        _depositAndFlush(lstForwarder, 1 ether);
 
-        // Random address can sweep
         vm.prank(address(0xBEEF));
         router.sweep(lstBToken);
 
@@ -290,15 +364,16 @@ contract ProjectFeeRouterTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_UpgradePreservesState() public {
-        // Deposit fees
-        reserveToken.mint(address(router), 1 ether);
+        _depositAndFlush(lstForwarder, 1 ether);
 
         // Upgrade to new implementation
         ProjectFeeRouterUpgradeable newImpl = new ProjectFeeRouterUpgradeable();
         vm.prank(owner);
         router.upgradeToAndCall(address(newImpl), "");
 
-        // State should be preserved - sweep should still work
+        // accrued and forwarderOf should survive — sweep still works.
+        assertEq(router.accrued(lstBToken), 1 ether);
+        assertEq(router.forwarderOf(lstBToken), address(lstForwarder));
         router.sweep(lstBToken);
         assertTrue(reserveToken.balanceOf(treasury) > 0);
     }
@@ -311,7 +386,7 @@ contract ProjectFeeRouterTest is Test {
         address newBToken = address(0xA3);
 
         vm.startPrank(owner);
-        router.registerBToken(newBToken, address(reserveToken));
+        address newForwarder = router.registerBToken(newBToken, address(reserveToken));
         router.setConfig(
             newBToken,
             ProjectFeeRouterUpgradeable.FeeConfig(2000, 2000, 2000, 2000, 2000),
@@ -320,7 +395,8 @@ contract ProjectFeeRouterTest is Test {
         vm.stopPrank();
 
         uint256 feeAmount = 10_000e18;
-        reserveToken.mint(address(router), feeAmount);
+        reserveToken.mint(newForwarder, feeAmount);
+        BTokenFeeForwarder(newForwarder).flush();
 
         router.sweep(newBToken);
 

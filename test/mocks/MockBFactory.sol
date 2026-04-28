@@ -7,7 +7,8 @@ import {MockERC20} from "./MockERC20.sol";
 
 /**
  * @title MockBFactory
- * @notice Mock implementation of BFactory for testing
+ * @notice Mock implementation of BFactory for testing. Mirrors real BFactory's
+ *         deployer-salted CREATE2 so precomputeBTokenAddress is meaningful.
  */
 contract MockBFactory is BFactory {
     uint256 public tokenCounter;
@@ -18,9 +19,8 @@ contract MockBFactory is BFactory {
         override
         returns (address bToken_)
     {
-        // Create a deterministic address for testing
-        //bToken_ = address(uint160(uint256(keccak256(abi.encodePacked(_name, _symbol, _salt, tokenCounter++)))));
-        bToken_ = address(new MockERC20{salt: _salt}(_name, _symbol, 18));
+        bytes32 finalSalt = keccak256(abi.encode(msg.sender, _salt));
+        bToken_ = address(new MockERC20{salt: finalSalt}(_name, _symbol, 18));
         isToken[bToken_] = true;
 
         // Mint totalSupply to the caller so the presale contract holds bTokens
@@ -57,12 +57,22 @@ contract MockBFactory is BFactory {
     }
 
     function precomputeBTokenAddress(
-        string memory,
-        string memory,
-        uint256,
-        bytes32,
-        address
-    ) external pure override returns (address computedAddress_) {
-        return address(0);
+        string memory _name,
+        string memory _symbol,
+        uint256, /* _totalSupply */
+        bytes32 _salt,
+        address _deployer
+    ) external view override returns (address computedAddress_) {
+        bytes32 finalSalt = keccak256(abi.encode(_deployer, _salt));
+        bytes32 initCodeHash = keccak256(
+            abi.encodePacked(type(MockERC20).creationCode, abi.encode(_name, _symbol, uint8(18)))
+        );
+        computedAddress_ = address(
+            uint160(
+                uint256(
+                    keccak256(abi.encodePacked(bytes1(0xff), address(this), finalSalt, initCodeHash))
+                )
+            )
+        );
     }
 }

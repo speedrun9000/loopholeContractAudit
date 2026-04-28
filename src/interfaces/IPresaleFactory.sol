@@ -12,4 +12,6 @@ interface IPresaleFactory {
         BFactory.CreateParams memory createParams,
         uint256 poolReserves
     ) external returns (address bToken);
+
+    function bFactory() external view returns (BFactory);
 }

@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {PresaleFactory} from "../src/PresaleFactory.sol";
 import {PresaleImplementation} from "../src/PresaleImplementation.sol";
+import {ProjectFeeRouterUpgradeable} from "../src/ProjectFeeRouterUpgradeable.sol";
 import {IPresale} from "../src/interfaces/IPresale.sol";
 import {MockBFactory} from "./mocks/MockBFactory.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
@@ -46,6 +47,7 @@ contract PresaleCreditBatchTest is Test {
     UpgradeableBeacon public beacon;
     MockERC20 public presaleToken;
     MockBaseline public mockBaseline;
+    ProjectFeeRouterUpgradeable public router;
 
     address public admin = address(0x3);
 
@@ -61,6 +63,28 @@ contract PresaleCreditBatchTest is Test {
         factory = PresaleFactory(address(factoryProxy));
         presaleToken = new MockERC20("Reserve", "RSV", 18);
         mockBaseline = new MockBaseline();
+
+        ProjectFeeRouterUpgradeable routerImpl = new ProjectFeeRouterUpgradeable();
+        ERC1967Proxy routerProxy = new ERC1967Proxy(
+            address(routerImpl), abi.encodeCall(routerImpl.initialize, (admin))
+        );
+        router = ProjectFeeRouterUpgradeable(address(routerProxy));
+    }
+
+    /// @dev Pre-register the bToken on the router (deploys forwarder) and finalize.
+    function _registerAndFinalize(PresaleImplementation presale, IPresale.FinalizeParams memory params) internal {
+        IPresale.BFactoryParams memory bfp = presale.getBFactoryParams();
+        uint16 circulatingBps = presale.circulatingSupplyBps();
+        uint256 totalSupply =
+            ((bfp.initialPoolBTokens + params.initialCollateral) * (10_000 + circulatingBps)) / 10_000;
+        address predicted = bFactory.precomputeBTokenAddress(
+            params.name, params.symbol, totalSupply, params.salt, address(factory)
+        );
+        vm.prank(admin);
+        router.registerBToken(predicted, address(presaleToken));
+        params.feeRouter = address(router);
+        vm.prank(admin);
+        presale.finalizeSale(params);
     }
 
     function _deployCreditPresale() internal returns (PresaleImplementation presale) {
@@ -133,8 +157,7 @@ contract PresaleCreditBatchTest is Test {
         PresaleImplementation presale = _deployCreditPresale();
 
         // Step 1: finalizeSale creates pool
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         assertTrue(presale.poolCreated());
         assertFalse(presale.isFinalized());
@@ -175,8 +198,7 @@ contract PresaleCreditBatchTest is Test {
     function test_MultipleBatches() public {
         PresaleImplementation presale = _deployCreditPresale();
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Batch 1
         address[] memory batch1Users = new address[](2);
@@ -238,8 +260,7 @@ contract PresaleCreditBatchTest is Test {
     function test_DepositsBlockedAfterPoolCreated() public {
         PresaleImplementation presale = _deployCreditPresale();
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Try to deposit during intermediate state
         address newDepositor = address(0x200);
@@ -255,8 +276,7 @@ contract PresaleCreditBatchTest is Test {
     function test_CancelBlockedAfterPoolCreated() public {
         PresaleImplementation presale = _deployCreditPresale();
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         vm.prank(admin);
         vm.expectRevert(IPresale.PoolAlreadyCreated.selector);
@@ -278,8 +298,7 @@ contract PresaleCreditBatchTest is Test {
     function test_ClaimCreditBatch_RevertsAfterFinalized() public {
         PresaleImplementation presale = _deployCreditPresale();
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
         vm.prank(admin);
         presale.completeFinalization();
 
@@ -291,8 +310,7 @@ contract PresaleCreditBatchTest is Test {
     function test_ClaimCreditBatch_RevertsNonAdmin() public {
         PresaleImplementation presale = _deployCreditPresale();
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         vm.prank(address(0x999));
         vm.expectRevert(IPresale.Unauthorized.selector);
@@ -343,8 +361,7 @@ contract PresaleCreditBatchTest is Test {
         vm.prank(depositor);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Spot sale already finalized — reverts before reaching InvalidSaleType
         assertTrue(presale.isFinalized());
@@ -397,8 +414,7 @@ contract PresaleCreditBatchTest is Test {
         vm.prank(depositor);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         vm.prank(admin);
         vm.expectRevert(IPresale.PresaleAlreadyFinalized.selector);
@@ -416,8 +432,7 @@ contract PresaleCreditBatchTest is Test {
     function test_CompleteFinalization_RevertsNonAdmin() public {
         PresaleImplementation presale = _deployCreditPresale();
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         vm.prank(address(0x999));
         vm.expectRevert(IPresale.Unauthorized.selector);
@@ -427,8 +442,7 @@ contract PresaleCreditBatchTest is Test {
     function test_CompleteFinalization_RevertsDoubleComplete() public {
         PresaleImplementation presale = _deployCreditPresale();
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
         vm.prank(admin);
         presale.completeFinalization();
 
@@ -448,8 +462,7 @@ contract PresaleCreditBatchTest is Test {
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.circulatingSupplyRecipient = recipient;
 
-        vm.prank(admin);
-        presale.finalizeSale(params);
+        _registerAndFinalize(presale, params);
 
         // The recipient should have received the circulating supply bTokens
         address bToken = presale.getCreatedToken();

@@ -8,12 +8,18 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {NftMarketplace} from "./NftMarketplace.sol";
+import {BTokenFeeForwarder} from "./BTokenFeeForwarder.sol";
 
 /**
  * @title ProjectFeeRouterUpgradeable
  * @notice UUPS upgradeable fee router that receives ERC20 creator-fee tokens
  *         and splits them per bToken configuration.
- * @dev Set as pool.feeRecipient for each bToken. Pull-based: anyone can call sweep().
+ * @dev    Each registered bToken gets a dedicated `BTokenFeeForwarder` deployed by
+ *         this router. Pools are configured with that forwarder as `feeRecipient`,
+ *         so creator fees for different bToken pools land at distinct addresses
+ *         even when they share the same reserve token. The forwarder calls
+ *         `receiveFees(bToken, amount)` to credit `accrued[bToken]`; `sweep`
+ *         distributes from that per-bToken accumulator.
  *
  *      LST bTokens: total swap fee 4%, staking 1% (25%), creator stream 3% (75%)
  *        -> Router splits creator stream: 6667 bps treasury, 3333 bps royalties
@@ -50,14 +56,18 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
     /// @notice Reserve token address per bToken
     mapping(address => address) public reserve;
 
-    /// @notice Tracked balance per bToken (for delta-based sweep)
-    mapping(address => uint256) public lastBalance;
+    /// @notice Pending fees per bToken, credited via receiveFees() and zeroed on sweep()
+    mapping(address => uint256) public accrued;
 
     /// @notice Fee split config per bToken
     mapping(address => FeeConfig) internal _cfg;
 
     /// @notice Recipient addresses per bToken
     mapping(address => Recipients) internal _recips;
+
+    /// @notice Per-bToken fee forwarder (deployed by registerBToken). This is the
+    ///         address that should be passed to BFactory as the pool's feeRecipient.
+    mapping(address => address) public forwarderOf;
 
     /// @dev Storage gap for future upgrades
     uint256[50] private __gap;
@@ -66,9 +76,11 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event Registered(address indexed bToken, address indexed reserveToken);
+    event Registered(address indexed bToken, address indexed reserveToken, address indexed forwarder);
 
     event ConfigSet(address indexed bToken, FeeConfig cfg, Recipients recips);
+
+    event FeesReceived(address indexed bToken, uint256 amount);
 
     /// there is a custom function to call to send funds here to the treasury
     event Swept(
@@ -87,10 +99,12 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
     //////////////////////////////////////////////////////////////*/
 
     error BTokenNotRegistered();
+    error BTokenAlreadyRegistered();
     error InvalidBpSum();
     error ZeroRecipientForNonZeroBps();
     error ZeroReserve();
     error NothingToSweep();
+    error OnlyForwarder();
 
     /*//////////////////////////////////////////////////////////////
                              INITIALIZATION
@@ -112,15 +126,27 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Register a bToken with its reserve token address.
-     * @param bToken The bToken address
-     * @param reserveToken The ERC20 reserve token for this bToken's pool
+     * @notice Register a bToken and deploy its dedicated fee forwarder.
+     * @dev    One-shot per bToken: re-registration is forbidden because the deployed
+     *         forwarder address is baked into the pool's `feeRecipient` at pool
+     *         creation; swapping it would orphan in-flight fees.
+     * @param  bToken The bToken address
+     * @param  reserveToken The ERC20 reserve token for this bToken's pool
+     * @return forwarder The address of the deployed forwarder (use as pool.feeRecipient)
      */
-    function registerBToken(address bToken, address reserveToken) external onlyOwner {
+    function registerBToken(address bToken, address reserveToken)
+        external
+        onlyOwner
+        returns (address forwarder)
+    {
         if (reserveToken == address(0)) revert ZeroReserve();
+        if (forwarderOf[bToken] != address(0)) revert BTokenAlreadyRegistered();
+
         reserve[bToken] = reserveToken;
-        lastBalance[bToken] = IERC20(reserveToken).balanceOf(address(this));
-        emit Registered(bToken, reserveToken);
+        forwarder = address(new BTokenFeeForwarder(bToken, IERC20(reserveToken), address(this)));
+        forwarderOf[bToken] = forwarder;
+
+        emit Registered(bToken, reserveToken, forwarder);
     }
 
     /**
@@ -159,22 +185,33 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
     }
 
     /**
-     * @notice Distribute any new creator-fee tokens that arrived for a bToken.
-     * @dev Pull-based: reads current balance, computes delta from lastBalance,
-     *      updates lastBalance, then distributes slices.
+     * @notice Credit fees forwarded by a bToken's dedicated forwarder.
+     * @dev    Only callable by `forwarderOf[bToken]`. The forwarder transfers tokens
+     *         to this contract first, then calls this to record attribution. The
+     *         fee router never reads its own `balanceOf` for accounting — credits
+     *         are explicit per bToken.
+     */
+    function receiveFees(address bToken, uint256 amount) external {
+        if (msg.sender != forwarderOf[bToken]) revert OnlyForwarder();
+        accrued[bToken] += amount;
+        emit FeesReceived(bToken, amount);
+    }
+
+    /**
+     * @notice Distribute pending creator-fee tokens for a bToken.
+     * @dev    Reads `accrued[bToken]` (set by receiveFees), zeroes it, then splits
+     *         per FeeConfig. Permissionless.
      * @param bToken The bToken whose fees to sweep
      */
     function sweep(address bToken) external nonReentrant {
         address r = reserve[bToken];
         if (r == address(0)) revert BTokenNotRegistered();
 
-        IERC20 token = IERC20(r);
-        uint256 bal = token.balanceOf(address(this));
-        uint256 delta = bal - lastBalance[bToken];
+        uint256 delta = accrued[bToken];
         if (delta == 0) revert NothingToSweep();
+        accrued[bToken] = 0;
 
-        // Update tracked balance BEFORE transfers
-        lastBalance[bToken] = bal;
+        IERC20 token = IERC20(r);
 
         FeeConfig memory cfg = _cfg[bToken];
         Recipients memory recips = _recips[bToken];
@@ -205,9 +242,6 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
                 recips.acquisitionTreasury != address(0) ? recips.acquisitionTreasury : recips.team;
             token.safeTransfer(remainderRecipient, remainder);
         }
-
-        // Adjust lastBalance to account for all outflows
-        lastBalance[bToken] = token.balanceOf(address(this));
 
         emit Swept(bToken, delta, toTreasury, toRoyalties, toTeam, toAfterburner, toBLV, remainder);
     }

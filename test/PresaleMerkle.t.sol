@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {PresaleFactory} from "../src/PresaleFactory.sol";
 import {PresaleImplementation} from "../src/PresaleImplementation.sol";
+import {ProjectFeeRouterUpgradeable} from "../src/ProjectFeeRouterUpgradeable.sol";
 import {IPresale} from "../src/interfaces/IPresale.sol";
 import {MockBFactory} from "./mocks/MockBFactory.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
@@ -19,6 +20,7 @@ contract PresaleMerkleTest is Test {
     UpgradeableBeacon public beacon;
     Merkle public merkle;
     MockERC20 public presaleToken;
+    ProjectFeeRouterUpgradeable public router;
 
     address public admin = address(0x5);
     address public user1 = address(0x1);
@@ -38,6 +40,12 @@ contract PresaleMerkleTest is Test {
         factory = PresaleFactory(address(factoryProxy));
         merkle = new Merkle();
         presaleToken = new MockERC20("Presale Token", "PRESALE", 18);
+
+        ProjectFeeRouterUpgradeable routerImpl = new ProjectFeeRouterUpgradeable();
+        ERC1967Proxy routerProxy = new ERC1967Proxy(
+            address(routerImpl), abi.encodeCall(routerImpl.initialize, (admin))
+        );
+        router = ProjectFeeRouterUpgradeable(address(routerProxy));
 
         presaleToken.mint(user1, 100 ether);
         vm.prank(user1);
@@ -625,6 +633,15 @@ contract PresaleMerkleTest is Test {
         // Warp past phase end
         vm.warp(block.timestamp + 8 days);
 
+        // Pre-register on the router so finalizeSale can resolve the per-bToken forwarder.
+        {
+            uint256 totalSupply = (1_000_000 ether * 10_500) / 10_000;
+            address predicted =
+                bFactory.precomputeBTokenAddress("Test", "TST", totalSupply, bytes32(0), address(factory));
+            vm.prank(admin);
+            router.registerBToken(predicted, address(presaleToken));
+        }
+
         vm.prank(admin);
         presale.finalizeSale(
             IPresale.FinalizeParams({
@@ -637,7 +654,7 @@ contract PresaleMerkleTest is Test {
                 initialDebt: 0,
                 acquisitionTreasury: address(0),
                 bpsToTreasury: 0,
-                feeRouter: address(0),
+                feeRouter: address(router),
                 baseline: address(0),
                 salt: bytes32(0),
                 circulatingSupplyRecipient: address(0)

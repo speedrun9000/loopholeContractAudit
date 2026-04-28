@@ -326,6 +326,11 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
             uint256 _auctionStartTimestamp = auctionStartTimestamp[nftCollection];
             if (_auctionStartTimestamp != 0) {
                 uint256 elapsedTime = block.timestamp - _auctionStartTimestamp;
+                // cap elapsed time at duration
+                uint256 _duration = auctionDuration[nftCollection];
+                if (elapsedTime > _duration) {
+                    elapsedTime = _duration;
+                }
                 // calculate the appropriate elapsed time for the same current price
                 uint256 startingPrice = _startingPrice(nftCollection);
                 // should be less time because price now falls faster -- divide by larger number, multiply by smaller number

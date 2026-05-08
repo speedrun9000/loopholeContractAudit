@@ -475,13 +475,15 @@ contract NftMarketplaceTests is Test {
             elapsedTimeBefore,
             "elapsed time should never increase as a result of calling `modifyMinAuctionPrice`"
         );
-        if (nftCostAfter != minAuctionPriceAfter) {
-            assertGe(
-                nftCostAfter,
-                nftCostBefore,
-                "nft cost should not decrease as a result of calling `modifyMinAuctionPrice` unless it is equal to the min price"
-            );
-        }
+        assertGe(
+            nftCostAfter,
+            nftCostBefore,
+            "nft cost should not decrease as a result of calling `modifyMinAuctionPrice`"
+        );
+    }
+
+    function test_modifyMinAuctionPrice_auctionOngoing_priceDoesNotDecrease() public {
+        test_fuzz_modifyMinAuctionPrice_auctionOngoing(40e18, 20e18, 40 weeks);
     }
 
     function test_fuzz_setSwapper(address newSwapper) public {

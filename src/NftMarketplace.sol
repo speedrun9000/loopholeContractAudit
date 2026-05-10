@@ -62,6 +62,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     error ZeroRecipientForNonZeroBps();
     error OnlySwapper();
     error CannotSwapOfferToken();
+    error CollectionNotRegistered();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -123,6 +124,9 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     /*//////////////////////////////////////////////////////////////
                               INITIALIZER
     //////////////////////////////////////////////////////////////*/
+    constructor() {
+        _disableInitializers();
+    }
 
     function initialize(IERC20 _offerToken, address _feeRouter, address initialOwner, IBSwap _bSwap, address _swapper)
         external
@@ -199,6 +203,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     /// @dev This will revert if no auction is ongoing *AND* this contract has no NFT to auction from the `nftCollection`
     function startAuction(address nftCollection) public whenNotPaused {
         if (auctionStartTimestamp[nftCollection] == 0) {
+            require(auctionDuration[nftCollection] != 0, CollectionNotRegistered());
             require(IERC721(nftCollection).balanceOf(address(this)) != 0, NoNftToAuction());
 
             auctionStartTimestamp[nftCollection] = block.timestamp;
@@ -321,6 +326,11 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
             uint256 _auctionStartTimestamp = auctionStartTimestamp[nftCollection];
             if (_auctionStartTimestamp != 0) {
                 uint256 elapsedTime = block.timestamp - _auctionStartTimestamp;
+                // cap elapsed time at duration
+                uint256 _duration = auctionDuration[nftCollection];
+                if (elapsedTime > _duration) {
+                    elapsedTime = _duration;
+                }
                 // calculate the appropriate elapsed time for the same current price
                 uint256 startingPrice = _startingPrice(nftCollection);
                 // should be less time because price now falls faster -- divide by larger number, multiply by smaller number
@@ -370,6 +380,15 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         _performCheckpoint(nftCollection, amountFees);
     }
 
+    /// @notice Permissionless function, allowing the caller to donate `amount` of `offerToken`, to be treated like fees for the `bToken`
+    function donate(address bToken, uint256 amount) external {
+        address nftCollection = collectionForBToken[bToken];
+        require(nftCollection != address(0), NftCollectionNotSetForBToken());
+
+        _performCheckpoint(nftCollection, amount);
+        offerToken.safeTransferFrom(msg.sender, address(this), amount);
+    }
+
     function _performCheckpoint(address nftCollection, uint256 amountFees) internal {
         offerAtCheckpoint[nftCollection] = offerPrice(nftCollection);
         lastCheckpointTimestamp[nftCollection] = block.timestamp;
@@ -391,7 +410,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         BTokenRecipients storage recipients = _recipients[address(bToken)];
         uint256 toAfterburner = (amountOut * feeConfig.bpsToAfterburner) / 10_000;
         uint256 toBLV = (amountOut * feeConfig.bpsToBLV) / 10_000;
-        if (toAfterburner > 0) IERC20(bToken).safeTransfer(recipients.afterburner, toAfterburner);
-        if (toBLV > 0) IERC20(bToken).safeTransfer(recipients.blvModule, toBLV);
+        if (toAfterburner > 0) IERC20(offerToken).safeTransfer(recipients.afterburner, toAfterburner);
+        if (toBLV > 0) IERC20(offerToken).safeTransfer(recipients.blvModule, toBLV);
     }
 }

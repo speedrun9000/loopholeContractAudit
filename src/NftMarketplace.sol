@@ -130,6 +130,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         offerToken = _offerToken;
         feeRouter = _feeRouter;
         __Ownable_init(initialOwner);
+        __Pausable_init();
         bSwap = _bSwap;
         _setSwapper(_swapper);
     }

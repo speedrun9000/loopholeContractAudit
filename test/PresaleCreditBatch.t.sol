@@ -500,7 +500,10 @@ contract PresaleCreditBatchTest is Test {
         assertEq(mockBaseline.claimCreditDebts(0), 50e18);
     }
 
-    function test_SelfCreditClaim_RevertsAfterCompleteFinalization() public {
+    function test_SelfCreditClaim_SucceedsAfterCompleteFinalization() public {
+        // Q2 scenario: admin finalizes within the grace window (potentially omitting a
+        // depositor), but stranded depositors retain the escape hatch indefinitely once
+        // the grace period elapses.
         PresaleImplementation presale = _deployCreditPresale();
 
         vm.prank(admin);
@@ -511,9 +514,17 @@ contract PresaleCreditBatchTest is Test {
         vm.warp(block.timestamp + presale.RESCUE_GRACE_PERIOD());
 
         bytes32[] memory proof = new bytes32[](0);
-        vm.prank(address(0xA1));
-        vm.expectRevert(IPresale.PresaleAlreadyFinalized.selector);
+        address depositor = address(0xA1);
+
+        vm.expectEmit(false, false, false, true);
+        emit IPresale.CreditBatchClaimed(1);
+        vm.prank(depositor);
         presale.selfCreditClaim(500e18, 50e18, proof);
+
+        assertEq(mockBaseline.getTotalClaimedUsers(), 1);
+        assertEq(mockBaseline.claimCreditUsers(0), depositor);
+        assertEq(mockBaseline.claimCreditCollaterals(0), 500e18);
+        assertEq(mockBaseline.claimCreditDebts(0), 50e18);
     }
 
     function test_SelfCreditClaim_RevertsBeforePoolCreated() public {

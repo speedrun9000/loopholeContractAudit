@@ -404,10 +404,11 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
 
     /**
      * @notice Permissionless self-rescue for credit-sale depositors
-     * @dev Escape hatch in case the admin abandons the presale in the intermediate state
-     *      (poolCreated && !finalized) and never includes the caller in a claimCreditBatch.
-     *      Callable only after the RESCUE_GRACE_PERIOD elapses since finalizeSale, giving
-     *      the admin a window to drive batched claims before depositors self-rescue.
+     * @dev Escape hatch in case the admin never includes the caller in a claimCreditBatch.
+     *      Callable from RESCUE_GRACE_PERIOD after finalizeSale onward, regardless of whether
+     *      completeFinalization has been called. The merkle root is immutable once the pool
+     *      exists, so a stranded depositor with a valid proof can self-rescue indefinitely.
+     *      The grace period reserves the early window for the admin's batched flow.
      *      Caller must supply their own (collateral, debt, proof) tuple matching the
      *      claimMerkleRoot set at pool creation. Authorization is enforced by Baseline's
      *      proof check; the leaf is bound to msg.sender.
@@ -417,7 +418,6 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
      */
     function selfCreditClaim(uint128 collateral, uint128 debt, bytes32[] calldata proof) external nonReentrant {
         if (!poolCreated) revert NotPoolCreated();
-        if (finalized) revert PresaleAlreadyFinalized();
         if (saleType != SaleType.Credit) revert InvalidSaleType();
         if (block.timestamp < poolCreatedAt + RESCUE_GRACE_PERIOD) revert SelfCreditClaimGracePeriodActive();
 

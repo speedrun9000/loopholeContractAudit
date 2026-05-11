@@ -29,7 +29,6 @@ contract PresaleFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     event PresaleDeployed(
         address indexed presale, address indexed creator, uint256 phaseCount, IPresale.SaleType saleType
     );
-    event BeaconUpgraded(address indexed newImplementation);
     event PresaleBeaconModified(IBeacon indexed previousBeacon, IBeacon indexed newBeacon);
 
     /*//////////////////////////////////////////////////////////////

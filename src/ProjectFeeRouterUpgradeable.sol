@@ -173,9 +173,6 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
         uint256 delta = bal - lastBalance[bToken];
         if (delta == 0) revert NothingToSweep();
 
-        // Update tracked balance BEFORE transfers
-        lastBalance[bToken] = bal;
-
         FeeConfig memory cfg = _cfg[bToken];
         Recipients memory recips = _recips[bToken];
 

@@ -114,6 +114,11 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
                              INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     /**
      * @notice Initialize the presale contract
      * @param _phases Array of phase configurations

@@ -24,7 +24,6 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         uint16 bpsToBLV;
     }
 
-    // TODO: verify which recipients are needed
     /// @dev Used for distributing bTokens from NFT sales
     struct BTokenRecipients {
         address afterburner;

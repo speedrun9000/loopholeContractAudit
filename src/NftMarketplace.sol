@@ -248,9 +248,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         collectionForBToken[bToken] = nftCollection;
         bTokenForCollection[nftCollection] = bToken;
         emit CollectionForBTokenSet(bToken, nftCollection);
-        // initialize checkpoint timestamp for the collection
-        lastCheckpointTimestamp[nftCollection] = block.timestamp;
-        // this also performs the first checkpoint
+        // _modifyMaxOfferIncreaseRate performs the first checkpoint, which initializes lastCheckpointTimestamp
         _modifyMaxOfferIncreaseRate(nftCollection, _maxOfferIncreaseRate);
         _modifyMinAuctionPrice(nftCollection, _minAuctionPrice);
         _modifyAuctionDuration(nftCollection, _auctionDuration);

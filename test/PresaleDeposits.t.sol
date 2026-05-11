@@ -84,8 +84,8 @@ contract PresaleDepositTest is Test {
         vm.prank(user1);
         presale.deposit(0, 5 ether, new bytes32[](0));
 
-        assertEq(presale.getUserDepositedAmount(user1, 0), 5 ether);
-        assertEq(presale.getTotalRaised(), 5 ether);
+        assertEq(presale.userDeposits(user1, 0), 5 ether);
+        assertEq(presale.totalRaised(), 5 ether);
         assertEq(presale.getUserRemainingAllocation(user1, 0), 5 ether);
     }
 
@@ -94,23 +94,23 @@ contract PresaleDepositTest is Test {
         vm.prank(user1);
         presale.deposit(0, 3 ether, new bytes32[](0));
 
-        assertEq(presale.getUserDepositedAmount(user1, 0), 3 ether);
+        assertEq(presale.userDeposits(user1, 0), 3 ether);
         assertEq(presale.getUserRemainingAllocation(user1, 0), 7 ether);
 
         // Second deposit
         vm.prank(user1);
         presale.deposit(0, 4 ether, new bytes32[](0));
 
-        assertEq(presale.getUserDepositedAmount(user1, 0), 7 ether);
+        assertEq(presale.userDeposits(user1, 0), 7 ether);
         assertEq(presale.getUserRemainingAllocation(user1, 0), 3 ether);
 
         // Third deposit
         vm.prank(user1);
         presale.deposit(0, 3 ether, new bytes32[](0));
 
-        assertEq(presale.getUserDepositedAmount(user1, 0), 10 ether);
+        assertEq(presale.userDeposits(user1, 0), 10 ether);
         assertEq(presale.getUserRemainingAllocation(user1, 0), 0);
-        assertEq(presale.getTotalRaised(), 10 ether);
+        assertEq(presale.totalRaised(), 10 ether);
     }
 
     function test_MultipleDeposits_ExceedAllocation() public {
@@ -133,9 +133,9 @@ contract PresaleDepositTest is Test {
         vm.prank(user2);
         presale.deposit(0, 7 ether, new bytes32[](0));
 
-        assertEq(presale.getUserDepositedAmount(user1, 0), 6 ether);
-        assertEq(presale.getUserDepositedAmount(user2, 0), 7 ether);
-        assertEq(presale.getTotalRaised(), 13 ether);
+        assertEq(presale.userDeposits(user1, 0), 6 ether);
+        assertEq(presale.userDeposits(user2, 0), 7 ether);
+        assertEq(presale.totalRaised(), 13 ether);
     }
 
     function test_DepositExceedsPhaseCap() public {
@@ -159,7 +159,7 @@ contract PresaleDepositTest is Test {
         }
 
         // Total should be 100 ether (phase cap reached)
-        assertEq(presale.getTotalRaised(), 100 ether);
+        assertEq(presale.totalRaised(), 100 ether);
 
         // Next deposit should fail
         address extraUser = address(0x999);
@@ -249,7 +249,7 @@ contract PresaleDepositTest is Test {
         presale.deposit(0, deposit3, new bytes32[](0));
         vm.stopPrank();
 
-        assertEq(presale.getUserDepositedAmount(user1, 0), total);
-        assertEq(presale.getTotalRaised(), total);
+        assertEq(presale.userDeposits(user1, 0), total);
+        assertEq(presale.totalRaised(), total);
     }
 }

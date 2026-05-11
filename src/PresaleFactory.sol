@@ -186,14 +186,6 @@ contract PresaleFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /**
-     * @notice Get the beacon address
-     * @return Address of the beacon contract
-     */
-    function getBeacon() external view returns (address) {
-        return address(presaleBeacon);
-    }
-
-    /**
      * @notice Get all deployed presale contracts
      * @return Array of presale contract addresses
      */
@@ -207,14 +199,6 @@ contract PresaleFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function getPresaleCount() external view returns (uint256) {
         return presales.length;
-    }
-
-    /**
-     * @notice Get the BFactory address
-     * @return Address of the BFactory contract
-     */
-    function getBFactoryAddress() external view returns (address) {
-        return address(bFactory);
     }
 
     /*//////////////////////////////////////////////////////////////

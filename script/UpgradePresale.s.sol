@@ -19,7 +19,7 @@ contract UpgradePresale is Script {
         address factoryAddress = vm.envAddress("FACTORY_ADDRESS");
 
         PresaleFactory factory = PresaleFactory(factoryAddress);
-        address beaconAddress = factory.getBeacon();
+        address beaconAddress = address(factory.presaleBeacon());
         UpgradeableBeacon beacon = UpgradeableBeacon(beaconAddress);
 
         console.log("=== Current State ===");

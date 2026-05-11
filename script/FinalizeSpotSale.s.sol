@@ -35,11 +35,11 @@ contract FinalizeSpotSale is Script {
         PresaleImplementation presale = PresaleImplementation(payable(presaleAddress));
 
         // Validate presale state
-        require(!presale.isFinalized(), "Presale already finalized");
-        require(!presale.isCancelled(), "Presale is cancelled");
-        require(presale.getSaleType() == IPresale.SaleType.Spot, "Not a spot sale");
+        require(!presale.finalized(), "Presale already finalized");
+        require(!presale.cancelled(), "Presale is cancelled");
+        require(presale.saleType() == IPresale.SaleType.Spot, "Not a spot sale");
 
-        uint256 totalRaised = presale.getTotalRaised();
+        uint256 totalRaised = presale.totalRaised();
 
         console.log("=== Spot Sale Finalization ===");
         console.log("Presale:", presaleAddress);
@@ -67,14 +67,14 @@ contract FinalizeSpotSale is Script {
         vm.stopBroadcast();
 
         // Verify
-        require(presale.isFinalized(), "Finalization failed");
+        require(presale.finalized(), "Finalization failed");
 
-        address bToken = presale.getCreatedToken();
-        uint256 totalClaimable = presale.getTotalClaimableTokens();
+        address bToken = presale.createdToken();
+        uint256 totalClaimable = presale.totalClaimableTokens();
 
         console.log("\n=== Finalization Complete ===");
         console.log("bToken:", bToken);
-        console.log("Pool ID:", vm.toString(presale.getCreatedPool()));
+        console.log("Pool ID:", vm.toString(presale.createdPoolId()));
         console.log("Total Claimable bTokens:", totalClaimable);
         console.log("bTokens held by presale:", IERC20(bToken).balanceOf(presaleAddress));
         console.log("\nUsers can now call claimSpot() to receive their bTokens pro-rata.");

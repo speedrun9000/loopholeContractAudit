@@ -46,16 +46,16 @@ contract FinalizeCreditSale is Script {
         PresaleImplementation presale = PresaleImplementation(payable(vm.envAddress("PRESALE_ADDRESS")));
         uint256 batchSize = vm.envUint("BATCH_SIZE");
 
-        require(!presale.isCancelled(), "Presale is cancelled");
-        require(!presale.isFinalized(), "Presale already finalized");
-        require(presale.getSaleType() == IPresale.SaleType.Credit, "Not a credit sale");
+        require(!presale.cancelled(), "Presale is cancelled");
+        require(!presale.finalized(), "Presale already finalized");
+        require(presale.saleType() == IPresale.SaleType.Credit, "Not a credit sale");
         require(batchSize > 0, "BATCH_SIZE must be > 0");
 
         // --- Step 1: Create pool if needed ---
         if (!presale.poolCreated()) {
             console.log("=== Step 1: Create Pool ===");
             console.log("Presale:", address(presale));
-            console.log("Total Raised:", presale.getTotalRaised());
+            console.log("Total Raised:", presale.totalRaised());
 
             IPresale.FinalizeParams memory params = IPresale.FinalizeParams({
                 name: vm.envString("TOKEN_NAME"),
@@ -76,11 +76,11 @@ contract FinalizeCreditSale is Script {
             vm.broadcast(deployerPrivateKey);
             presale.finalizeSale(params);
 
-            console.log("Pool created. bToken:", presale.getCreatedToken());
-            console.log("Pool ID:", vm.toString(presale.getCreatedPool()));
+            console.log("Pool created. bToken:", presale.createdToken());
+            console.log("Pool ID:", vm.toString(presale.createdPoolId()));
         } else {
             console.log("=== Pool already created, resuming claims ===");
-            console.log("bToken:", presale.getCreatedToken());
+            console.log("bToken:", presale.createdToken());
         }
 
         // --- Step 2: Parse positions and batch claim ---
@@ -147,13 +147,13 @@ contract FinalizeCreditSale is Script {
         vm.broadcast(deployerPrivateKey);
         presale.completeFinalization();
 
-        require(presale.isFinalized(), "Finalization failed");
+        require(presale.finalized(), "Finalization failed");
 
         // Clean up progress file
         _writeProgress(progressPath, totalUsers);
 
         console.log("Presale fully finalized.");
-        console.log("bToken:", presale.getCreatedToken());
+        console.log("bToken:", presale.createdToken());
         console.log("Total positions claimed:", totalUsers);
     }
 

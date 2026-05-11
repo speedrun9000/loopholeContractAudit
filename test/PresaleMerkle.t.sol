@@ -128,7 +128,7 @@ contract PresaleMerkleTest is Test {
         vm.prank(user1);
         presale.deposit(0, 5 ether, proof);
 
-        assertEq(presale.getUserDepositedAmount(user1, 0), 5 ether);
+        assertEq(presale.userDeposits(user1, 0), 5 ether);
     }
 
     function test_WhitelistInvalidDeposit() public {
@@ -238,7 +238,7 @@ contract PresaleMerkleTest is Test {
         vm.prank(user3);
         presale.deposit(0, 5 ether, new bytes32[](0));
 
-        assertEq(presale.getTotalRaised(), 15 ether);
+        assertEq(presale.totalRaised(), 15 ether);
     }
 
     function test_MultipleWhitelistedUsers() public {
@@ -313,7 +313,7 @@ contract PresaleMerkleTest is Test {
         vm.prank(user4);
         presale.deposit(0, 8 ether, proof4);
 
-        assertEq(presale.getTotalRaised(), 26 ether);
+        assertEq(presale.totalRaised(), 26 ether);
     }
 
     function test_DifferentWhitelistsPerPhase() public {
@@ -400,7 +400,7 @@ contract PresaleMerkleTest is Test {
         vm.expectRevert(IPresale.UserNotWhitelisted.selector);
         presale.deposit(1, 5 ether, new bytes32[](0));
 
-        assertEq(presale.getTotalRaised(), 10 ether);
+        assertEq(presale.totalRaised(), 10 ether);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -477,7 +477,7 @@ contract PresaleMerkleTest is Test {
         vm.prank(user1);
         presale.deposit(0, 5 ether, proof);
 
-        assertEq(presale.getUserDepositedAmount(user1, 0), 5 ether);
+        assertEq(presale.userDeposits(user1, 0), 5 ether);
     }
 
     function test_SetPhaseMerkleRoot_EmitsEvent() public {
@@ -548,7 +548,7 @@ contract PresaleMerkleTest is Test {
         vm.prank(user3);
         presale.deposit(0, 1 ether, new bytes32[](0));
 
-        assertEq(presale.getUserDepositedAmount(user3, 0), 1 ether);
+        assertEq(presale.userDeposits(user3, 0), 1 ether);
     }
 
     function test_SetPhaseMerkleRoot_RevertNonAdmin() public {

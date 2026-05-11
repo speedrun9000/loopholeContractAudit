@@ -168,10 +168,10 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
      * @param bToken The bToken whose fees to sweep
      */
     function sweep(address bToken) external nonReentrant {
-        address r = reserve[bToken];
-        if (r == address(0)) revert BTokenNotRegistered();
+        address reserveToken = reserve[bToken];
+        if (reserveToken == address(0)) revert BTokenNotRegistered();
 
-        IERC20 token = IERC20(r);
+        IERC20 token = IERC20(reserveToken);
         uint256 bal = token.balanceOf(address(this));
         uint256 delta = bal - lastBalance[bToken];
         if (delta == 0) revert NothingToSweep();

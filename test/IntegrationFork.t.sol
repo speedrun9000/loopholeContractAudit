@@ -379,7 +379,7 @@ contract IntegrationForkTest is Test {
             vm.prank(users[i]);
             presale.deposit(0, 5 ether, proof);
         }
-        assertEq(presale.getTotalRaised(), 25 ether);
+        assertEq(presale.totalRaised(), 25 ether);
 
         // Warp to phase 1
         vm.warp(block.timestamp + 2 days);
@@ -394,7 +394,7 @@ contract IntegrationForkTest is Test {
             vm.prank(users[i]);
             presale.deposit(1, 4 ether, proof);
         }
-        assertEq(presale.getTotalRaised(), 75 ether);
+        assertEq(presale.totalRaised(), 75 ether);
 
         // Warp to phase 2
         vm.warp(block.timestamp + 3 days);
@@ -405,16 +405,16 @@ contract IntegrationForkTest is Test {
             vm.prank(users[i]);
             presale.deposit(2, 10 ether, proof);
         }
-        assertEq(presale.getTotalRaised(), 175 ether);
+        assertEq(presale.totalRaised(), 175 ether);
 
         // Verify user deposits across phases
-        assertEq(presale.getUserDepositedAmount(users[0], 0), 5 ether);
-        assertEq(presale.getUserDepositedAmount(users[0], 1), 0 ether);
-        assertEq(presale.getUserDepositedAmount(users[0], 2), 10 ether);
+        assertEq(presale.userDeposits(users[0], 0), 5 ether);
+        assertEq(presale.userDeposits(users[0], 1), 0 ether);
+        assertEq(presale.userDeposits(users[0], 2), 10 ether);
 
-        assertEq(presale.getUserDepositedAmount(users[5], 0), 0 ether);
-        assertEq(presale.getUserDepositedAmount(users[5], 1), 10 ether);
-        assertEq(presale.getUserDepositedAmount(users[5], 2), 10 ether);
+        assertEq(presale.userDeposits(users[5], 0), 0 ether);
+        assertEq(presale.userDeposits(users[5], 1), 10 ether);
+        assertEq(presale.userDeposits(users[5], 2), 10 ether);
 
         // Finalize presale
         // inputs modified from test
@@ -466,12 +466,12 @@ contract IntegrationForkTest is Test {
         presale.completeFinalization();
 
         // Verify finalization
-        assertTrue(presale.isFinalized(), "presale not marked finalized");
-        assertTrue(presale.getCreatedToken() != address(0), "token creation failed");
-        assertTrue(presale.getCreatedPool() != bytes32(0), "pool creation failed");
+        assertTrue(presale.finalized(), "presale not marked finalized");
+        assertTrue(presale.createdToken() != address(0), "token creation failed");
+        assertTrue(presale.createdPoolId() != bytes32(0), "pool creation failed");
 
         // --- Final balance assertions ---
-        address bToken = presale.getCreatedToken();
+        address bToken = presale.createdToken();
 
         // Presale: zero reserve tokens (all went to pool + treasury)
         assertEq(_presaleToken.balanceOf(address(presale)), 0, "presale should have zero reserve tokens");
@@ -612,9 +612,9 @@ contract IntegrationForkTest is Test {
         vm.prank(adminAddress);
         presale.completeFinalization();
 
-        assertTrue(presale.isFinalized(), "presale not finalized");
+        assertTrue(presale.finalized(), "presale not finalized");
 
-        address bToken = presale.getCreatedToken();
+        address bToken = presale.createdToken();
         assertTrue(bToken != address(0), "bToken not created");
 
         // Verify credit positions via IBLens
@@ -749,7 +749,7 @@ contract IntegrationForkTest is Test {
             vm.prank(depositors[i]);
             presale.deposit(0, deposits[i], new bytes32[](0));
         }
-        assertEq(presale.getTotalRaised(), totalDeposited, "total raised mismatch");
+        assertEq(presale.totalRaised(), totalDeposited, "total raised mismatch");
 
         // Calculate pricing
         uint256 initialPoolBTokens = presale.getBFactoryParams().initialPoolBTokens;
@@ -780,12 +780,12 @@ contract IntegrationForkTest is Test {
         );
 
         // Spot sale should be immediately finalized
-        assertTrue(presale.isFinalized(), "spot sale should be finalized immediately");
-        assertTrue(presale.getCreatedToken() != address(0), "bToken not created");
-        assertTrue(presale.getCreatedPool() != bytes32(0), "pool not created");
+        assertTrue(presale.finalized(), "spot sale should be finalized immediately");
+        assertTrue(presale.createdToken() != address(0), "bToken not created");
+        assertTrue(presale.createdPoolId() != bytes32(0), "pool not created");
 
-        address bToken = presale.getCreatedToken();
-        uint256 totalClaimable = presale.getTotalClaimableTokens();
+        address bToken = presale.createdToken();
+        uint256 totalClaimable = presale.totalClaimableTokens();
 
         // Validate circulating supply matches expected
         assertEq(totalClaimable, initialCirculatingSupply, "totalClaimable mismatch");

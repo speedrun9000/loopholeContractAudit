@@ -163,7 +163,7 @@ contract PresaleIntegrationTest is Test {
             vm.prank(users[i]);
             presale.deposit(0, 5 ether, proof);
         }
-        assertEq(presale.getTotalRaised(), 25 ether);
+        assertEq(presale.totalRaised(), 25 ether);
 
         // Warp to phase 1
         vm.warp(block.timestamp + 2 days);
@@ -178,7 +178,7 @@ contract PresaleIntegrationTest is Test {
             vm.prank(users[i]);
             presale.deposit(1, 4 ether, proof);
         }
-        assertEq(presale.getTotalRaised(), 75 ether);
+        assertEq(presale.totalRaised(), 75 ether);
 
         // Warp to phase 2
         vm.warp(block.timestamp + 3 days);
@@ -189,16 +189,16 @@ contract PresaleIntegrationTest is Test {
             vm.prank(users[i]);
             presale.deposit(2, 10 ether, proof);
         }
-        assertEq(presale.getTotalRaised(), 175 ether);
+        assertEq(presale.totalRaised(), 175 ether);
 
         // Verify user deposits across phases
-        assertEq(presale.getUserDepositedAmount(users[0], 0), 5 ether);
-        assertEq(presale.getUserDepositedAmount(users[0], 1), 0 ether);
-        assertEq(presale.getUserDepositedAmount(users[0], 2), 10 ether);
+        assertEq(presale.userDeposits(users[0], 0), 5 ether);
+        assertEq(presale.userDeposits(users[0], 1), 0 ether);
+        assertEq(presale.userDeposits(users[0], 2), 10 ether);
 
-        assertEq(presale.getUserDepositedAmount(users[5], 0), 0 ether);
-        assertEq(presale.getUserDepositedAmount(users[5], 1), 10 ether);
-        assertEq(presale.getUserDepositedAmount(users[5], 2), 10 ether);
+        assertEq(presale.userDeposits(users[5], 0), 0 ether);
+        assertEq(presale.userDeposits(users[5], 1), 10 ether);
+        assertEq(presale.userDeposits(users[5], 2), 10 ether);
 
         // Finalize presale (credit path: creates pool, enters intermediate state)
         vm.prank(admin);
@@ -206,16 +206,16 @@ contract PresaleIntegrationTest is Test {
 
         // Verify intermediate state
         assertTrue(presale.poolCreated(), "pool should be created");
-        assertFalse(presale.isFinalized(), "should not be finalized yet (credit sale)");
-        assertTrue(presale.getCreatedToken() != address(0), "bToken should exist");
-        assertTrue(presale.getCreatedPool() != bytes32(0), "poolId should exist");
+        assertFalse(presale.finalized(), "should not be finalized yet (credit sale)");
+        assertTrue(presale.createdToken() != address(0), "bToken should exist");
+        assertTrue(presale.createdPoolId() != bytes32(0), "poolId should exist");
 
         // Credit sale: complete finalization
         vm.prank(admin);
         presale.completeFinalization();
 
         // Verify fully finalized
-        assertTrue(presale.isFinalized());
+        assertTrue(presale.finalized());
     }
 
     function test_EndToEnd_FailedPresale_Refunds() public {
@@ -292,7 +292,7 @@ contract PresaleIntegrationTest is Test {
             presale.deposit(0, deposits[i], proof);
         }
 
-        assertEq(presale.getTotalRaised(), 33 ether);
+        assertEq(presale.totalRaised(), 33 ether);
 
         // Warp past all phases
         vm.warp(block.timestamp + 15 days);
@@ -418,7 +418,7 @@ contract PresaleIntegrationTest is Test {
                 presale.deposit(0, userPhaseDeposits[0][i], proof);
             }
         }
-        assertEq(presale.getTotalRaised(), 35 ether);
+        assertEq(presale.totalRaised(), 35 ether);
 
         // Warp to phase 1
         vm.warp(startTime + 3 days);
@@ -435,7 +435,7 @@ contract PresaleIntegrationTest is Test {
             vm.prank(users[i]);
             presale.deposit(1, userPhaseDeposits[1][i] / 2, proof);
         }
-        assertEq(presale.getTotalRaised(), 65 ether);
+        assertEq(presale.totalRaised(), 65 ether);
 
         // Warp to phase 2
         vm.warp(startTime + 6 days);
@@ -449,7 +449,7 @@ contract PresaleIntegrationTest is Test {
             vm.prank(users[i]);
             presale.deposit(2, userPhaseDeposits[2][i], proof);
         }
-        assertEq(presale.getTotalRaised(), 92 ether);
+        assertEq(presale.totalRaised(), 92 ether);
 
         // Warp past all phases
         vm.warp(startTime + 11 days);
@@ -458,7 +458,7 @@ contract PresaleIntegrationTest is Test {
         // user0 cancels presale (didn't reach soft cap of 150 ether)
         vm.prank(users[0]);
         presale.cancelSale();
-        assertTrue(presale.isCancelled());
+        assertTrue(presale.cancelled());
 
         // Record balances before refunds
         uint256[5] memory balancesBefore;
@@ -645,7 +645,7 @@ contract PresaleIntegrationTest is Test {
         vm.prank(users[2]);
         presale.deposit(0, 5 ether, proof);
 
-        assertEq(presale.getTotalRaised(), 30 ether);
+        assertEq(presale.totalRaised(), 30 ether);
 
         // Try to cancel before phases end
         vm.prank(users[0]);
@@ -665,7 +665,7 @@ contract PresaleIntegrationTest is Test {
         // Now anyone can cancel
         vm.prank(users[0]);
         presale.cancelSale();
-        assertTrue(presale.isCancelled());
+        assertTrue(presale.cancelled());
 
         // Users can claim refunds
         vm.prank(users[0]);
@@ -739,7 +739,7 @@ contract PresaleIntegrationTest is Test {
         vm.prank(users[1]);
         presale.deposit(0, 50 ether, proof);
 
-        assertEq(presale.getTotalRaised(), 100 ether);
+        assertEq(presale.totalRaised(), 100 ether);
 
         // Warp past all phases
         vm.warp(startTime + 4 days);
@@ -753,7 +753,7 @@ contract PresaleIntegrationTest is Test {
         // Admin can still cancel
         vm.prank(admin);
         presale.cancelSale();
-        assertTrue(presale.isCancelled());
+        assertTrue(presale.cancelled());
     }
 
     function test_MultiplePresales_Independent() public {
@@ -851,8 +851,8 @@ contract PresaleIntegrationTest is Test {
         vm.prank(user);
         presale2.deposit(0, 3 ether, proof2);
 
-        assertEq(presale1.getTotalRaised(), 5 ether);
-        assertEq(presale2.getTotalRaised(), 3 ether);
+        assertEq(presale1.totalRaised(), 5 ether);
+        assertEq(presale2.totalRaised(), 3 ether);
         assertEq(presale1.getPhaseCount(), 1);
         assertEq(presale2.getPhaseCount(), 2);
     }

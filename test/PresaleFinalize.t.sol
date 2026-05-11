@@ -212,13 +212,13 @@ contract PresaleFinalizeTest is Test {
         presale.finalizeSale(params);
 
         // Not yet fully finalized (credit sale)
-        assertFalse(presale.isFinalized());
+        assertFalse(presale.finalized());
         assertTrue(presale.poolCreated());
-        assertTrue(presale.getCreatedToken() != address(0));
+        assertTrue(presale.createdToken() != address(0));
 
         vm.prank(admin);
         presale.completeFinalization();
-        assertTrue(presale.isFinalized());
+        assertTrue(presale.finalized());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -252,12 +252,12 @@ contract PresaleFinalizeTest is Test {
         assertEq(presaleToken.balanceOf(treasury), 60 ether);
 
         // Not yet fully finalized (credit sale needs completeFinalization)
-        assertFalse(presale.isFinalized());
-        assertTrue(presale.getCreatedToken() != address(0));
+        assertFalse(presale.finalized());
+        assertTrue(presale.createdToken() != address(0));
 
         vm.prank(admin);
         presale.completeFinalization();
-        assertTrue(presale.isFinalized());
+        assertTrue(presale.finalized());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -302,7 +302,7 @@ contract PresaleFinalizeTest is Test {
 
         // Verify claimCredit was called with correct args
         assertTrue(mockBaseline.claimCreditCalled());
-        assertEq(mockBaseline.claimCreditBToken(), presale.getCreatedToken());
+        assertEq(mockBaseline.claimCreditBToken(), presale.createdToken());
         assertEq(mockBaseline.getClaimCreditUsersLength(), 2);
         assertEq(mockBaseline.claimCreditUsers(0), address(0xA1));
         assertEq(mockBaseline.claimCreditUsers(1), address(0xA2));
@@ -322,7 +322,7 @@ contract PresaleFinalizeTest is Test {
         // Complete finalization
         vm.prank(admin);
         presale.completeFinalization();
-        assertTrue(presale.isFinalized());
+        assertTrue(presale.finalized());
     }
 
     function test_ClaimCreditBatchRevertsBeforePoolCreated() public {

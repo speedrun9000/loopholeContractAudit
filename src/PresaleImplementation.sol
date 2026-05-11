@@ -320,7 +320,6 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
 
         // Store created token
         createdToken = bToken;
-        bFactoryParams.bToken = bToken;
 
         emit BTokenCreated(bToken, params.name, params.symbol, totalSupply);
 

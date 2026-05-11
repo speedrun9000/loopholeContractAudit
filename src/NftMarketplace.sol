@@ -24,7 +24,6 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         uint16 bpsToBLV;
     }
 
-    // TODO: verify which recipients are needed
     /// @dev Used for distributing bTokens from NFT sales
     struct BTokenRecipients {
         address afterburner;
@@ -131,6 +130,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         offerToken = _offerToken;
         feeRouter = _feeRouter;
         __Ownable_init(initialOwner);
+        __Pausable_init();
         bSwap = _bSwap;
         _setSwapper(_swapper);
     }
@@ -248,9 +248,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         collectionForBToken[bToken] = nftCollection;
         bTokenForCollection[nftCollection] = bToken;
         emit CollectionForBTokenSet(bToken, nftCollection);
-        // initialize checkpoint timestamp for the collection
-        lastCheckpointTimestamp[nftCollection] = block.timestamp;
-        // this also performs the first checkpoint
+        // _modifyMaxOfferIncreaseRate performs the first checkpoint, which initializes lastCheckpointTimestamp
         _modifyMaxOfferIncreaseRate(nftCollection, _maxOfferIncreaseRate);
         _modifyMinAuctionPrice(nftCollection, _minAuctionPrice);
         _modifyAuctionDuration(nftCollection, _auctionDuration);

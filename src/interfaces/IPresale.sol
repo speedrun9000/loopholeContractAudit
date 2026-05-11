@@ -112,7 +112,7 @@ interface IPresale {
     event BTokenCreated(address indexed bToken, string name, string symbol, uint256 totalSupply);
     event PoolCreated(address indexed bToken, bytes32 indexed poolId);
     event PresaleFinalized(address indexed bToken, bytes32 indexed poolId, uint256 totalRaised);
-    event PresaleCancelled(address indexed presale);
+    event PresaleCancelled();
     event RefundIssued(address indexed user, uint256 amount, uint8 indexed phaseId);
     event PhaseStarted(uint8 indexed phaseId, uint256 startTime);
     event PhaseEnded(uint8 indexed phaseId, uint256 endTime);

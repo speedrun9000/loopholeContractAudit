@@ -35,9 +35,6 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
     /// @notice Parameters for BFactory token and pool creation
     BFactoryParams public bFactoryParams;
 
-    /// @notice Baseline's BFactory contract
-    BFactory public bFactory;
-
     /// @notice ERC20 token used for presale deposits
     IERC20 public presaleToken;
 
@@ -155,7 +152,6 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
 
         config = _config;
         bFactoryParams = _bFactoryParams;
-        bFactory = BFactory(_presaleFactory); // deprecated slot, kept for storage layout compatibility
         presaleToken = IERC20(_presaleToken);
         saleType = _config.saleType;
         circulatingSupplyBps = _config.circulatingSupplyBps;
@@ -324,7 +320,6 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
 
         // Store created token
         createdToken = bToken;
-        bFactoryParams.bToken = bToken;
 
         emit BTokenCreated(bToken, params.name, params.symbol, totalSupply);
 
@@ -420,7 +415,7 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
         }
 
         cancelled = true;
-        emit PresaleCancelled(address(this));
+        emit PresaleCancelled();
     }
 
     /*//////////////////////////////////////////////////////////////

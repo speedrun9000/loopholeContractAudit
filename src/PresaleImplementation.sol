@@ -415,7 +415,7 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
         }
 
         cancelled = true;
-        emit PresaleCancelled(address(this));
+        emit PresaleCancelled();
     }
 
     /*//////////////////////////////////////////////////////////////

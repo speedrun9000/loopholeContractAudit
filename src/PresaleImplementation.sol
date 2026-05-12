@@ -318,9 +318,18 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
         // Approve factory to pull reserve tokens, then create bToken + pool through factory
         // (factory is the only address that needs Baseline approval)
         presaleToken.safeIncreaseAllowance(presaleFactory, poolReserves);
-        address bToken = IPresaleFactory(presaleFactory).createBTokenAndPool(
+        (address bToken, uint256 reserveRefund) = IPresaleFactory(presaleFactory).createBTokenAndPool(
             params.name, params.symbol, totalSupply, params.salt, createParams, poolReserves
         );
+
+        // Forward any reserves the pool did not consume to the acquisitions
+        // treasury so they cannot become stranded in this presale (there is no
+        // rescue path). The treasury is required whenever a refund is produced.
+        if (reserveRefund > 0) {
+            if (params.acquisitionTreasury == address(0)) revert InvalidFundSplit();
+            presaleToken.safeTransfer(params.acquisitionTreasury, reserveRefund);
+            emit TreasurySent(params.acquisitionTreasury, reserveRefund);
+        }
 
         // Store created token
         createdToken = bToken;

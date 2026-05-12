@@ -11,5 +11,5 @@ interface IPresaleFactory {
         bytes32 salt,
         BFactory.CreateParams memory createParams,
         uint256 poolReserves
-    ) external returns (address bToken);
+    ) external returns (address bToken, uint256 reserveRefund);
 }

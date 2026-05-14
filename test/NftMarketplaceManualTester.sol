@@ -28,7 +28,7 @@ contract NftMarketplaceManualTester {
 
         nftMarketplace = new NftMarketplace();
         nftMarketplace.initialize({
-            _offerToken: mockERC20, _feeRouter: feeRouter, initialOwner: initialOwner, _bSwap: bSwap, _swapper: swapper
+            _WETH: mockERC20, _feeRouter: feeRouter, initialOwner: initialOwner, _bSwap: bSwap, _swapper: swapper
         });
 
         NftMarketplace.BTokenFeeConfig memory feeConfig =

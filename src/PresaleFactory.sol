@@ -138,6 +138,8 @@ contract PresaleFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @param createParams BFactory pool creation parameters (bToken field is overwritten)
      * @param poolReserves Amount of reserve tokens to pull from the presale for the pool
      * @return bToken Address of the created bToken
+     * @return reserveRefund Portion of poolReserves not consumed by bFactory.createPool,
+     *         transferred back to the calling presale
      */
     function createBTokenAndPool(
         string memory name,
@@ -146,12 +148,16 @@ contract PresaleFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         bytes32 salt,
         BFactory.CreateParams memory createParams,
         uint256 poolReserves
-    ) external returns (address bToken) {
+    ) external returns (address bToken, uint256 reserveRefund) {
         if (!isPresale[msg.sender]) revert UnauthorizedPresale();
 
         // Create bToken (minted to this factory)
         bToken = bFactory.createBToken(name, symbol, totalSupply, salt);
         createParams.bToken = bToken;
+
+        // Snapshot reserve balance so the post-createPool sweep only refunds
+        // reserves pulled by this call, not unrelated tokens sitting in the factory.
+        uint256 reserveBalanceBefore = IERC20(createParams.reserve).balanceOf(address(this));
 
         // Pull reserve tokens from the presale
         IERC20(createParams.reserve).safeTransferFrom(msg.sender, address(this), poolReserves);
@@ -169,6 +175,18 @@ contract PresaleFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 remainingBTokens = IERC20(bToken).balanceOf(address(this));
         if (remainingBTokens > 0) {
             IERC20(bToken).safeTransfer(msg.sender, remainingBTokens);
+        }
+
+        // Sweep any unconsumed reserves back to the presale so they aren't stranded
+        // here. bFactory.createPool may consume less than poolReserves depending on
+        // the supplied parameters.
+        uint256 reserveBalanceAfter = IERC20(createParams.reserve).balanceOf(address(this));
+        if (reserveBalanceAfter > reserveBalanceBefore) {
+            reserveRefund = reserveBalanceAfter - reserveBalanceBefore;
+            // Clear any leftover bFactory allowance from this call so a stale
+            // approval cannot be reused against this factory's balance later.
+            IERC20(createParams.reserve).forceApprove(address(bFactory), 0);
+            IERC20(createParams.reserve).safeTransfer(msg.sender, reserveRefund);
         }
     }
 

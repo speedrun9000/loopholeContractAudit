@@ -11,6 +11,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import {IBSwap} from "./interfaces/IBswap.sol";
+import {IBStaking} from "./interfaces/IBStaking.sol";
 
 contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     using SafeERC20 for IERC20;
@@ -53,6 +54,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     event ConfigSet(address indexed bToken, BTokenFeeConfig feeConfig, BTokenRecipients recipients);
     event SwapperSet(address indexed newSwapper);
     event SwapPerformed(address indexed bToken, uint256 amountIn, uint256 amountOut);
+    event StakingRewardsClaimed(address indexed bToken, address indexed collection, uint256 amount);
 
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -235,6 +237,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         emit NftAcquired(nftCollection, msg.sender, tokenId, _currentOffer);
         // start auction for the NFT if one is not already ongoing
         startAuction(nftCollection);
+        IBStaking(address(bSwap)).withdraw(bTokenForCollection[nftCollection], _currentOffer);
         IERC20(bTokenForCollection[nftCollection]).safeTransfer(msg.sender, _currentOffer);
     }
 
@@ -420,6 +423,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         require(nftCollection != address(0), NftCollectionNotSetForBToken());
 
         _performCheckpoint(nftCollection, amountFees);
+        _stakeBToken(bToken, amountFees);
     }
 
     /// @notice Permissionless function, allowing the caller to donate `amount` of `bToken`, to be treated like fees for the `bToken`
@@ -429,6 +433,16 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
 
         _performCheckpoint(nftCollection, amount);
         IERC20(bToken).safeTransferFrom(msg.sender, address(this), amount);
+        _stakeBToken(bToken, amount);
+    }
+
+    function claimStakingRewards(address bToken) external returns (uint256 earned) {
+        address nftCollection = collectionForBToken[bToken];
+        require(nftCollection != address(0), NftCollectionNotSetForBToken());
+
+        earned = IBStaking(address(bSwap)).claim(bToken, address(this), false);
+        nftSalesProceeds[nftCollection] += earned;
+        emit StakingRewardsClaimed(bToken, nftCollection, earned);
     }
 
     function _performCheckpoint(address nftCollection, uint256 amountFees) internal {
@@ -436,6 +450,12 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         lastCheckpointTimestamp[nftCollection] = block.timestamp;
         checkpointBalance[nftCollection] += amountFees;
         emit Checkpoint(nftCollection, offerAtCheckpoint[nftCollection], checkpointBalance[nftCollection]);
+    }
+
+    function _stakeBToken(address bToken, uint256 amount) internal {
+        if (amount == 0) return;
+        IERC20(bToken).forceApprove(address(bSwap), amount);
+        IBStaking(address(bSwap)).deposit(bToken, address(this), amount);
     }
 
     /// @notice Called by the `swapper` to exchange `WETH` tokens earned from NFT sales for bTokens and distribute the proceeds

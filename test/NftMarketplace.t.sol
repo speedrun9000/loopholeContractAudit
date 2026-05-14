@@ -12,9 +12,20 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
 
 contract MockBSwap {
     uint256 public quoteMultiplier = 1e18;
+    address public rewardToken;
+    uint256 public claimAmount;
+    mapping(address => mapping(address => uint256)) public staked;
 
     function setQuoteMultiplier(uint256 newQuoteMultiplier) external {
         quoteMultiplier = newQuoteMultiplier;
+    }
+
+    function setRewardToken(address newRewardToken) external {
+        rewardToken = newRewardToken;
+    }
+
+    function setClaimAmount(uint256 newClaimAmount) external {
+        claimAmount = newClaimAmount;
     }
 
     function buyTokensExactIn(address, uint256 amountIn, uint256)
@@ -31,6 +42,23 @@ contract MockBSwap {
         returns (uint256 amountOut, uint256 fees, uint256 slippage)
     {
         return (amountIn * quoteMultiplier / 1e18, fees, slippage);
+    }
+
+    function deposit(address bToken, address user, uint256 amount) external {
+        IERC20(bToken).transferFrom(msg.sender, address(this), amount);
+        staked[bToken][user] += amount;
+    }
+
+    function withdraw(address bToken, uint256 amount) external {
+        staked[bToken][msg.sender] -= amount;
+        IERC20(bToken).transfer(msg.sender, amount);
+    }
+
+    function claim(address, address user, bool) external returns (uint256 amount) {
+        amount = claimAmount;
+        if (amount != 0) {
+            MockERC20(rewardToken).mint(user, amount);
+        }
     }
 }
 
@@ -55,6 +83,7 @@ contract NftMarketplaceTests is Test {
         mockWETH = new MockERC20("Wrapped Ether", "WETH", 18);
         mockERC721 = new MockERC721("Test ERC721", "TEST721");
         mockBSwap = new MockBSwap();
+        mockBSwap.setRewardToken(address(mockWETH));
         bSwap = IBSwap(address(mockBSwap));
 
         NftMarketplace nftMarketplaceImplementation = new NftMarketplace();
@@ -111,9 +140,12 @@ contract NftMarketplaceTests is Test {
 
     function test_fuzz_informOfFeeDistribution(uint256 amountFees) public {
         uint256 offerAtCheckpoint = nftMarketplace.offerPrice(address(mockERC721));
+        uint256 checkpointBalanceBefore = nftMarketplace.checkpointBalance(address(mockERC721));
+        uint256 stakedBefore = mockBSwap.staked(address(mockERC20), address(nftMarketplace));
+        uint256 expectedNewCheckpointBalance = checkpointBalanceBefore + amountFees;
+        uint256 expectedNewStakedBalance = stakedBefore + amountFees;
 
         mockERC20.mint(address(nftMarketplace), amountFees);
-        uint256 expectedNewCheckpointBalance = mockERC20.balanceOf(address(nftMarketplace));
         vm.expectEmit(true, true, true, true, address(nftMarketplace));
         emit NftMarketplace.Checkpoint(address(mockERC721), offerAtCheckpoint, expectedNewCheckpointBalance);
         vm.prank(feeRouter);
@@ -123,6 +155,11 @@ contract NftMarketplaceTests is Test {
         uint256 lastCheckpointTimestampAfter = nftMarketplace.lastCheckpointTimestamp(address(mockERC721));
         require(checkpointBalanceAfter == expectedNewCheckpointBalance, "checkpointBalance did not update correctly");
         require(lastCheckpointTimestampAfter == block.timestamp, "lastCheckpointTimestamp did not update correctly");
+        require(mockERC20.balanceOf(address(nftMarketplace)) == 0, "fees should be staked");
+        require(
+            mockBSwap.staked(address(mockERC20), address(nftMarketplace)) == expectedNewStakedBalance,
+            "staked balance did not update correctly"
+        );
     }
 
     function test_fuzz_informOfFeeDistribution_revert_OnlyFeeRouter(address caller) public {
@@ -146,6 +183,31 @@ contract NftMarketplaceTests is Test {
 
         vm.warp(block.timestamp + 1e36);
         require(nftMarketplace.offerPrice(address(mockERC721)) == amountFees, "incorrect offerPrice 3");
+    }
+
+    function test_donateStakesBTokens() public {
+        uint256 amount = 1e18;
+        mockERC20.mint(address(this), amount);
+        mockERC20.approve(address(nftMarketplace), amount);
+
+        nftMarketplace.donate(address(mockERC20), amount);
+
+        assertEq(nftMarketplace.checkpointBalance(address(mockERC721)), amount, "checkpoint balance");
+        assertEq(mockERC20.balanceOf(address(nftMarketplace)), 0, "marketplace bToken balance");
+        assertEq(mockBSwap.staked(address(mockERC20), address(nftMarketplace)), amount, "staked bToken balance");
+    }
+
+    function test_claimStakingRewardsIncreasesSalesProceeds() public {
+        uint256 claimAmount = 3e18;
+        mockBSwap.setClaimAmount(claimAmount);
+
+        vm.expectEmit(true, true, true, true, address(nftMarketplace));
+        emit NftMarketplace.StakingRewardsClaimed(address(mockERC20), address(mockERC721), claimAmount);
+        uint256 earned = nftMarketplace.claimStakingRewards(address(mockERC20));
+
+        assertEq(earned, claimAmount, "earned amount");
+        assertEq(nftMarketplace.nftSalesProceeds(address(mockERC721)), claimAmount, "sales proceeds");
+        assertEq(mockWETH.balanceOf(address(nftMarketplace)), claimAmount, "claimed WETH balance");
     }
 
     function test_fuzz_offerPrice(uint256 amountFees, uint256 timeToWarpForward) public {
@@ -344,6 +406,8 @@ contract NftMarketplaceTests is Test {
             emit NftMarketplace.AuctionStarted(address(mockERC721));
         }
         vm.expectEmit(false, false, false, false);
+        emit IERC20.Transfer(address(mockBSwap), address(nftMarketplace), offerPriceBefore);
+        vm.expectEmit(false, false, false, false);
         emit IERC20.Transfer(address(nftMarketplace), address(this), offerPriceBefore);
         vm.prank(seller);
         nftMarketplace.sellNftToVault(address(mockERC721), tokenId, minSalePrice);
@@ -368,6 +432,10 @@ contract NftMarketplaceTests is Test {
         require(
             checkpointBalanceAfter == checkpointBalanceBefore - offerPriceBefore,
             "checkpointBalance not updated correctly"
+        );
+        require(
+            mockBSwap.staked(address(mockERC20), address(nftMarketplace)) == checkpointBalanceAfter,
+            "staked balance not updated correctly"
         );
         uint256 newMaxOffer = offerPriceBefore * 75 / 100;
 

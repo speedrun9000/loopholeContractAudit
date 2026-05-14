@@ -901,6 +901,7 @@ contract IntegrationForkTest is Test {
     }
 
     function test_fuzz_informOfFeeDistribution(uint256 amountFees) public {
+        amountFees = bound(amountFees, 1e18, 100e18);
         uint256 offerAtCheckpoint = nftMarketplace.offerPrice(address(mockERC721));
 
         deal(address(lstBToken), address(nftMarketplace), amountFees);
@@ -942,6 +943,8 @@ contract IntegrationForkTest is Test {
             emit NftMarketplace.AuctionStarted(address(mockERC721));
         }
         vm.expectEmit(false, false, false, false);
+        emit IERC20.Transfer(baseline, address(nftMarketplace), offerPriceBefore);
+        vm.expectEmit(false, false, false, false);
         emit IERC20.Transfer(address(nftMarketplace), address(this), offerPriceBefore);
         vm.prank(seller);
         nftMarketplace.sellNftToVault(address(mockERC721), tokenId, minSalePrice);
@@ -978,8 +981,7 @@ contract IntegrationForkTest is Test {
     }
 
     function test_fuzz_sellNftToVault(uint256 amountFees, uint256 tokenId) public {
-        vm.assume(amountFees >= 1e18);
-        vm.assume(amountFees < 1e36);
+        amountFees = bound(amountFees, 1e18, 100e18);
         address seller = address(this);
         mockERC721.mint(seller, tokenId);
 

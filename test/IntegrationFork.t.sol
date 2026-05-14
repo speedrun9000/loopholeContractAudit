@@ -457,7 +457,7 @@ contract IntegrationForkTest is Test {
                 feeRouter: address(router),
                 baseline: baseline,
                 salt: bytes32(++saltCounter),
-                circulatingSupplyRecipient: address(0)
+                circulatingSupplyRecipient: address(0xBBBB)
             })
         );
 
@@ -485,9 +485,14 @@ contract IntegrationForkTest is Test {
         // bToken total supply should match calculated value
         assertEq(IERC20(bToken).totalSupply(), totalSupply, "bToken total supply mismatch");
 
-        // Credit sale with no circulatingSupplyRecipient: presale holds circulating supply bTokens
-        uint256 presaleBTokenBalance = IERC20(bToken).balanceOf(address(presale));
-        assertEq(presaleBTokenBalance, initialCirculatingSupply, "presale should hold circulating supply");
+        // Credit sale: circulating supply bTokens are sent to the configured recipient,
+        // not retained by the presale.
+        assertEq(IERC20(bToken).balanceOf(address(presale)), 0, "presale should hold no bTokens");
+        assertEq(
+            IERC20(bToken).balanceOf(address(0xBBBB)),
+            initialCirculatingSupply,
+            "recipient should hold circulating supply"
+        );
 
         // end modified section
     }
@@ -600,7 +605,7 @@ contract IntegrationForkTest is Test {
                 feeRouter: address(router),
                 baseline: baseline,
                 salt: bytes32(++saltCounter),
-                circulatingSupplyRecipient: address(0)
+                circulatingSupplyRecipient: address(0xBBBB)
             })
         );
 

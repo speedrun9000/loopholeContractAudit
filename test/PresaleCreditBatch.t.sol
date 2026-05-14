@@ -121,7 +121,7 @@ contract PresaleCreditBatchTest is Test {
             feeRouter: address(0),
             baseline: address(mockBaseline),
             salt: bytes32(0),
-            circulatingSupplyRecipient: address(0)
+            circulatingSupplyRecipient: address(0xBBBB)
         });
     }
 
@@ -459,5 +459,16 @@ contract PresaleCreditBatchTest is Test {
         // The circulating supply = totalSupply * 500 / 10500 (approximately 5% of pool tokens)
         uint256 expectedCirculating = (1_000_000 ether * 500) / 10_000;
         assertEq(recipientBalance, expectedCirculating);
+    }
+
+    function test_CreditFinalize_RevertsOnZeroRecipient() public {
+        PresaleImplementation presale = _deployCreditPresale();
+
+        IPresale.FinalizeParams memory params = _defaultFinalizeParams();
+        params.circulatingSupplyRecipient = address(0);
+
+        vm.prank(admin);
+        vm.expectRevert(IPresale.InvalidCirculatingSupplyRecipient.selector);
+        presale.finalizeSale(params);
     }
 }

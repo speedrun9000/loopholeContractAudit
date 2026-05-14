@@ -270,6 +270,9 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
         if (totalRaised < config.softCap) revert SoftCapNotReached();
         if (params.bpsToTreasury > 10_000) revert InvalidFundSplit();
         if (params.bpsToTreasury > 0 && params.acquisitionTreasury == address(0)) revert InvalidFundSplit();
+        if (saleType == SaleType.Credit && params.circulatingSupplyRecipient == address(0)) {
+            revert InvalidCirculatingSupplyRecipient();
+        }
         // feeRouter is set via CreateParams.feeRecipient at pool creation
 
         // Mark pool as created (intermediate state)
@@ -357,12 +360,12 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
      *         enter intermediate state for paginated credit claims
      * @param bToken Address of the created bToken
      * @param initialCirculatingSupply Amount of bTokens not in pool or collateral
-     * @param circulatingSupplyRecipient Address to receive circulating supply (can be zero)
+     * @param circulatingSupplyRecipient Address to receive circulating supply (non-zero, enforced in finalizeSale)
      */
     function _finalizeCredit(address bToken, uint256 initialCirculatingSupply, address circulatingSupplyRecipient)
         internal
     {
-        if (circulatingSupplyRecipient != address(0) && initialCirculatingSupply > 0) {
+        if (initialCirculatingSupply > 0) {
             IERC20(bToken).safeTransfer(circulatingSupplyRecipient, initialCirculatingSupply);
         }
 

@@ -69,7 +69,7 @@ contract PresaleIntegrationTest is Test {
             feeRouter: address(0),
             baseline: address(0),
             salt: bytes32(0),
-            circulatingSupplyRecipient: address(0)
+            circulatingSupplyRecipient: address(0xBBBB)
         });
     }
 

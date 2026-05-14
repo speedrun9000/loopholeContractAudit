@@ -198,7 +198,9 @@ interface IPresale {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function getUserDepositedAmount(address user, uint8 phaseId) external view returns (uint256);
+    /// @dev Compiler-generated getters for public state (`userDeposits`, `createdToken`, etc.)
+
+    function userDeposits(address user, uint8 phaseId) external view returns (uint256);
 
     function getUserRemainingAllocation(address user, uint8 phaseId) external view returns (uint256);
 
@@ -208,19 +210,19 @@ interface IPresale {
 
     function getBFactoryParams() external view returns (BFactoryParams memory);
 
-    function getCreatedToken() external view returns (address);
+    function createdToken() external view returns (address);
 
-    function getCreatedPool() external view returns (bytes32);
+    function createdPoolId() external view returns (bytes32);
 
-    function getTotalRaised() external view returns (uint256);
+    function totalRaised() external view returns (uint256);
 
-    function isFinalized() external view returns (bool);
+    function finalized() external view returns (bool);
 
-    function isCancelled() external view returns (bool);
+    function cancelled() external view returns (bool);
 
-    function getSaleType() external view returns (SaleType);
+    function saleType() external view returns (SaleType);
 
-    function getTotalClaimableTokens() external view returns (uint256);
+    function totalClaimableTokens() external view returns (uint256);
 
     function getClaimableAmount(address user) external view returns (uint256);
 }

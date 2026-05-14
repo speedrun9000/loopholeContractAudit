@@ -118,7 +118,7 @@ contract TestLoopE2E is Script {
             console.log("User", i + 1, "deposited:", DEPOSIT_AMOUNT);
         }
 
-        uint256 totalRaised = presale.getTotalRaised();
+        uint256 totalRaised = presale.totalRaised();
         console.log("Total raised:", totalRaised);
 
         // ── Step 4: Finalize ─────────────────────────────────────────
@@ -150,9 +150,9 @@ contract TestLoopE2E is Script {
             })
         );
 
-        address bToken = presale.getCreatedToken();
+        address bToken = presale.createdToken();
         console.log("LOOP bToken:", bToken);
-        console.log("Total claimable:", presale.getTotalClaimableTokens());
+        console.log("Total claimable:", presale.totalClaimableTokens());
 
         // ── Step 5: Users claim ──────────────────────────────────────
         console.log("\n=== Step 5: Users claim spot tokens ===");
@@ -171,7 +171,7 @@ contract TestLoopE2E is Script {
         console.log("\n=== Summary ===");
         console.log("Presale:", presaleAddr);
         console.log("LOOP bToken:", bToken);
-        console.log("Pool ID:", vm.toString(presale.getCreatedPool()));
+        console.log("Pool ID:", vm.toString(presale.createdPoolId()));
         console.log("Total raised:", totalRaised);
         console.log("Total supply:", totalSupply);
         console.log("Circulating supply:", circulatingSupply);

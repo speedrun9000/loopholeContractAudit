@@ -161,7 +161,7 @@ contract PresaleCreditBatchTest is Test {
         _registerAndFinalize(presale, _defaultFinalizeParams());
 
         assertTrue(presale.poolCreated());
-        assertFalse(presale.isFinalized());
+        assertFalse(presale.finalized());
 
         // Step 2: claim credit batch
         address[] memory users = new address[](2);
@@ -193,7 +193,7 @@ contract PresaleCreditBatchTest is Test {
         vm.prank(admin);
         presale.completeFinalization();
 
-        assertTrue(presale.isFinalized());
+        assertTrue(presale.finalized());
     }
 
     function test_MultipleBatches() public {
@@ -251,7 +251,7 @@ contract PresaleCreditBatchTest is Test {
         // Complete
         vm.prank(admin);
         presale.completeFinalization();
-        assertTrue(presale.isFinalized());
+        assertTrue(presale.finalized());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -365,7 +365,7 @@ contract PresaleCreditBatchTest is Test {
         _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Spot sale already finalized — reverts before reaching InvalidSaleType
-        assertTrue(presale.isFinalized());
+        assertTrue(presale.finalized());
         vm.prank(admin);
         vm.expectRevert(IPresale.PresaleAlreadyFinalized.selector);
         presale.claimCreditBatch(new address[](0), new uint128[](0), new uint128[](0), new bytes32[][](0));
@@ -466,7 +466,7 @@ contract PresaleCreditBatchTest is Test {
         _registerAndFinalize(presale, params);
 
         // The recipient should have received the circulating supply bTokens
-        address bToken = presale.getCreatedToken();
+        address bToken = presale.createdToken();
         uint256 recipientBalance = MockERC20(bToken).balanceOf(recipient);
         assertTrue(recipientBalance > 0);
 

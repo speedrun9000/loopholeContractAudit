@@ -46,14 +46,14 @@ contract PresaleFactoryTest is Test {
 
     function test_Constructor() public view {
         // Verify beacon is set correctly
-        assertEq(factory.getBeacon(), address(beacon));
+        assertEq(address(factory.presaleBeacon()), address(beacon));
 
         // Verify implementation through beacon
         assertEq(factory.getImplementation(), address(implementation));
         assertEq(beacon.implementation(), address(implementation));
 
         // Verify BFactory address
-        assertEq(factory.getBFactoryAddress(), address(bFactory));
+        assertEq(address(factory.bFactory()), address(bFactory));
 
         // Verify owner
         assertEq(factory.owner(), admin);
@@ -155,11 +155,11 @@ contract PresaleFactoryTest is Test {
         assertEq(storedParams.swapFeePct, 0.01 ether);
 
         // Verify initial state
-        assertEq(presaleImpl.getTotalRaised(), 0);
-        assertEq(presaleImpl.isFinalized(), false);
-        assertEq(presaleImpl.isCancelled(), false);
-        assertEq(presaleImpl.getCreatedToken(), address(0));
-        assertEq(presaleImpl.getCreatedPool(), bytes32(0));
+        assertEq(presaleImpl.totalRaised(), 0);
+        assertEq(presaleImpl.finalized(), false);
+        assertEq(presaleImpl.cancelled(), false);
+        assertEq(presaleImpl.createdToken(), address(0));
+        assertEq(presaleImpl.createdPoolId(), bytes32(0));
     }
 
     function test_DeployMultiplePresales() public {
@@ -300,7 +300,7 @@ contract PresaleFactoryTest is Test {
     }
 
     function test_GetBeacon() public view {
-        address beaconAddr = factory.getBeacon();
+        address beaconAddr = address(factory.presaleBeacon());
         assertTrue(beaconAddr != address(0));
         assertEq(beaconAddr, address(beacon));
     }

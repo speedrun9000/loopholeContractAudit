@@ -182,12 +182,12 @@ contract PresaleSpotClaimTest is Test {
         _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Spot sale should be immediately finalized
-        assertTrue(presale.isFinalized());
-        assertTrue(presale.getTotalClaimableTokens() > 0);
+        assertTrue(presale.finalized());
+        assertTrue(presale.totalClaimableTokens() > 0);
 
         // Claim — verify SpotClaimed event
         uint256 claimable = presale.getClaimableAmount(user1);
-        assertEq(claimable, presale.getTotalClaimableTokens()); // Only depositor, gets all
+        assertEq(claimable, presale.totalClaimableTokens()); // Only depositor, gets all
 
         vm.expectEmit(true, false, false, true);
         emit IPresale.SpotClaimed(user1, claimable);
@@ -195,7 +195,7 @@ contract PresaleSpotClaimTest is Test {
         presale.claimSpot();
 
         // Verify bToken received
-        address bToken = presale.getCreatedToken();
+        address bToken = presale.createdToken();
         assertEq(IERC20(bToken).balanceOf(user1), claimable);
 
         // Verify claimed
@@ -219,7 +219,7 @@ contract PresaleSpotClaimTest is Test {
         // Finalize
         _registerAndFinalize(presale, _defaultFinalizeParams());
 
-        uint256 totalClaimable = presale.getTotalClaimableTokens();
+        uint256 totalClaimable = presale.totalClaimableTokens();
 
         // Check pro-rata amounts
         uint256 user1Claimable = presale.getClaimableAmount(user1);
@@ -234,7 +234,7 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user2);
         presale.claimSpot();
 
-        address bToken = presale.getCreatedToken();
+        address bToken = presale.createdToken();
         assertEq(IERC20(bToken).balanceOf(user1), user1Claimable);
         assertEq(IERC20(bToken).balanceOf(user2), user2Claimable);
     }
@@ -260,14 +260,14 @@ contract PresaleSpotClaimTest is Test {
         _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Claim should include both phases (50 ether total)
-        uint256 totalClaimable = presale.getTotalClaimableTokens();
+        uint256 totalClaimable = presale.totalClaimableTokens();
         uint256 claimable = presale.getClaimableAmount(user1);
         assertEq(claimable, totalClaimable); // Only depositor
 
         vm.prank(user1);
         presale.claimSpot();
 
-        address bToken = presale.getCreatedToken();
+        address bToken = presale.createdToken();
         assertEq(IERC20(bToken).balanceOf(user1), totalClaimable);
     }
 
@@ -286,7 +286,7 @@ contract PresaleSpotClaimTest is Test {
 
         _registerAndFinalize(presale, _defaultFinalizeParams());
 
-        uint256 totalClaimable = presale.getTotalClaimableTokens();
+        uint256 totalClaimable = presale.totalClaimableTokens();
 
         // With 10% circulating, totalSupply = initialPoolBTokens * 110 / 100
         // circulating = totalSupply - initialPoolBTokens = initialPoolBTokens * 10 / 100
@@ -310,7 +310,7 @@ contract PresaleSpotClaimTest is Test {
 
         _registerAndFinalize(presale, params);
 
-        uint256 totalClaimable = presale.getTotalClaimableTokens();
+        uint256 totalClaimable = presale.totalClaimableTokens();
 
         // circulatingSupply = totalSupply - initialPoolBTokens - initialCollateral
         // totalSupply = (1_000_000 + 500) * 10_500 / 10_000 = 1_050_525
@@ -324,7 +324,7 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user1);
         presale.claimSpot();
 
-        address bToken = presale.getCreatedToken();
+        address bToken = presale.createdToken();
         assertEq(IERC20(bToken).balanceOf(user1), totalClaimable);
     }
 
@@ -479,7 +479,7 @@ contract PresaleSpotClaimTest is Test {
 
     function test_GetSaleType() public {
         PresaleImplementation presale = _deploySpotPresale(50 ether, 200 ether, 500);
-        assertEq(uint256(presale.getSaleType()), uint256(IPresale.SaleType.Spot));
+        assertEq(uint256(presale.saleType()), uint256(IPresale.SaleType.Spot));
     }
 
     function test_GetClaimableAmount_ZeroBeforeFinalize() public {
@@ -497,7 +497,7 @@ contract PresaleSpotClaimTest is Test {
         _registerAndFinalize(presale, _defaultFinalizeParams());
 
         uint256 claimable = presale.getClaimableAmount(user1);
-        assertEq(claimable, presale.getTotalClaimableTokens());
+        assertEq(claimable, presale.totalClaimableTokens());
         assertTrue(claimable > 0);
 
         // After claiming: returns 0 again
@@ -545,7 +545,7 @@ contract PresaleSpotClaimTest is Test {
 
         _registerAndFinalize(presale, params);
 
-        uint256 totalClaimable = presale.getTotalClaimableTokens();
+        uint256 totalClaimable = presale.totalClaimableTokens();
 
         // Validate totalClaimable matches expected circulating supply from first principles
         uint256 initialPoolBTokens = 1_000_000 ether;
@@ -578,7 +578,7 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user2);
         presale.claimSpot();
 
-        address bToken = presale.getCreatedToken();
+        address bToken = presale.createdToken();
         assertEq(IERC20(bToken).balanceOf(user1), claim1);
         assertEq(IERC20(bToken).balanceOf(user2), claim2);
     }
@@ -644,17 +644,17 @@ contract PresaleSpotClaimTest is Test {
             presale.deposit(0, deposits[i], new bytes32[](0));
         }
 
-        assertEq(presale.getTotalRaised(), totalDeposits);
+        assertEq(presale.totalRaised(), totalDeposits);
 
         // Finalize with fuzzed initialCollateral
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.initialCollateral = initialCollateral;
 
         _registerAndFinalize(presale, params);
-        assertTrue(presale.isFinalized());
+        assertTrue(presale.finalized());
 
-        uint256 totalClaimable = presale.getTotalClaimableTokens();
-        address bToken = presale.getCreatedToken();
+        uint256 totalClaimable = presale.totalClaimableTokens();
+        address bToken = presale.createdToken();
 
         // Validate totalClaimable against expected circulating supply
         uint256 initialPoolBTokens = 1_000_000 ether;
@@ -787,7 +787,7 @@ contract PresaleSpotClaimTest is Test {
             totalRaised += amount;
         }
 
-        assertEq(presale.getTotalRaised(), totalRaised);
+        assertEq(presale.totalRaised(), totalRaised);
 
         // Finalize with fuzzed initialCollateral
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
@@ -795,8 +795,8 @@ contract PresaleSpotClaimTest is Test {
 
         _registerAndFinalize(presale, params);
 
-        uint256 totalClaimable = presale.getTotalClaimableTokens();
-        address bToken = presale.getCreatedToken();
+        uint256 totalClaimable = presale.totalClaimableTokens();
+        address bToken = presale.createdToken();
 
         // Validate totalClaimable against expected circulating supply (10% = 1000 bps)
         uint256 initialPoolBTokens = 1_000_000 ether;
@@ -809,13 +809,13 @@ contract PresaleSpotClaimTest is Test {
         uint256 phase1Deposits = 0;
         uint256 phase2Deposits = 0;
         for (uint256 i = 0; i < 30; i++) {
-            phase0Deposits += presale.getUserDepositedAmount(users[i], 0);
+            phase0Deposits += presale.userDeposits(users[i], 0);
         }
         for (uint256 i = 10; i < 40; i++) {
-            phase1Deposits += presale.getUserDepositedAmount(users[i], 1);
+            phase1Deposits += presale.userDeposits(users[i], 1);
         }
         for (uint256 i = 20; i < numUsers; i++) {
-            phase2Deposits += presale.getUserDepositedAmount(users[i], 2);
+            phase2Deposits += presale.userDeposits(users[i], 2);
         }
         assertTrue(phase0Deposits > 0, "phase 0 should have deposits");
         assertTrue(phase1Deposits > 0, "phase 1 should have deposits");
@@ -876,7 +876,7 @@ contract PresaleSpotClaimTest is Test {
         _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Spot sale: finalized immediately after finalizeSale
-        assertTrue(presale.isFinalized());
+        assertTrue(presale.finalized());
         assertTrue(presale.poolCreated());
     }
 }

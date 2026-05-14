@@ -560,16 +560,6 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Get the total amount deposited by a user in a specific phase
-     * @param user Address of the user
-     * @param phaseId Phase ID
-     * @return Total amount deposited by the user in the phase
-     */
-    function getUserDepositedAmount(address user, uint8 phaseId) external view returns (uint256) {
-        return userDeposits[user][phaseId];
-    }
-
-    /**
      * @notice Get the remaining allocation for a user in a specific phase
      * @param user Address of the user
      * @param phaseId Phase ID
@@ -614,46 +604,6 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
     }
 
     /**
-     * @notice Get the address of the created token
-     * @return Address of the created token (zero if not created)
-     */
-    function getCreatedToken() external view returns (address) {
-        return createdToken;
-    }
-
-    /**
-     * @notice Get the ID of the created pool
-     * @return Pool ID (zero if not created)
-     */
-    function getCreatedPool() external view returns (bytes32) {
-        return createdPoolId;
-    }
-
-    /**
-     * @notice Get the total amount raised across all phases
-     * @return Total amount raised
-     */
-    function getTotalRaised() external view returns (uint256) {
-        return totalRaised;
-    }
-
-    /**
-     * @notice Check if the presale is finalized
-     * @return True if finalized
-     */
-    function isFinalized() external view returns (bool) {
-        return finalized;
-    }
-
-    /**
-     * @notice Check if the presale is cancelled
-     * @return True if cancelled
-     */
-    function isCancelled() external view returns (bool) {
-        return cancelled;
-    }
-
-    /**
      * @notice Get the total number of phases
      * @return Number of phases
      */
@@ -667,22 +617,6 @@ contract PresaleImplementation is IPresale, Initializable, ReentrancyGuardUpgrad
      */
     function allPhasesEnded() public view returns (bool) {
         return block.timestamp > phases[phases.length - 1].endTime;
-    }
-
-    /**
-     * @notice Get the sale type (Credit or Spot)
-     * @return The sale type enum value
-     */
-    function getSaleType() external view returns (SaleType) {
-        return saleType;
-    }
-
-    /**
-     * @notice Get total bTokens available for spot sale claims
-     * @return Total claimable tokens (only meaningful for spot sales)
-     */
-    function getTotalClaimableTokens() external view returns (uint256) {
-        return totalClaimableTokens;
     }
 
     /**

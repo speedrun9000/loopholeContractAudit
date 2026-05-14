@@ -102,7 +102,7 @@ contract DeployPresale is Script {
         console.log("Hard Cap:", config.hardCap);
         console.log("Sale Type:", saleTypeRaw == 0 ? "Credit" : "Spot");
         console.log("Circulating Supply Bps:", circulatingSupplyBps);
-        console.log("BFactory Address:", factory.getBFactoryAddress());
+        console.log("BFactory Address:", address(factory.bFactory()));
 
         console.log("\n=== Phase Details ===");
         for (uint8 i = 0; i < phases.length; i++) {

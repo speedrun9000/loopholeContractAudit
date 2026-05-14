@@ -87,7 +87,7 @@ contract IntegrationForkTest is Test {
         // Deploy factory with beacon, bFactory, and admin
         PresaleFactory factoryImpl = new PresaleFactory();
         ERC1967Proxy factoryProxy = new ERC1967Proxy(
-            address(factoryImpl), abi.encodeCall(factoryImpl.initialize, (beacon, bFactory, bController, adminAddress))
+            address(factoryImpl), abi.encodeCall(factoryImpl.initialize, (beacon, bFactory, adminAddress))
         );
         factory = PresaleFactory(address(factoryProxy));
 
@@ -355,7 +355,9 @@ contract IntegrationForkTest is Test {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0
+            initialDebt: 0,
+            initialBLV: 0,
+            swapFeePct: 0.01 ether
         });
 
         vm.prank(adminAddress);
@@ -556,7 +558,9 @@ contract IntegrationForkTest is Test {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0
+            initialDebt: 0,
+            initialBLV: 0,
+            swapFeePct: 0.01 ether
         });
 
         vm.prank(adminAddress);
@@ -752,7 +756,9 @@ contract IntegrationForkTest is Test {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0
+            initialDebt: 0,
+            initialBLV: 0,
+            swapFeePct: 0.01 ether
         });
 
         vm.prank(adminAddress);

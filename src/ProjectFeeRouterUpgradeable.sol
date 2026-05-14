@@ -188,6 +188,17 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
         uint256 distributed = toTreasury + toRoyalties + toTeam + toAfterburner + toBLV;
         uint256 remainder = delta - distributed;
 
+        // Fold remainder into treasury (if set) or team. This keeps the treasury callback's
+        // reported amount aligned with what was actually transferred, so a marketplace
+        // acquisitionTreasury's checkpointBalance includes the rounding dust.
+        if (remainder > 0) {
+            if (recips.acquisitionTreasury != address(0)) {
+                toTreasury += remainder;
+            } else {
+                toTeam += remainder;
+            }
+        }
+
         // Transfer slices
         if (toTreasury > 0) {
             token.safeTransfer(recips.acquisitionTreasury, toTreasury);
@@ -198,13 +209,6 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
         if (toTeam > 0) token.safeTransfer(recips.team, toTeam);
         if (toAfterburner > 0) token.safeTransfer(recips.afterburner, toAfterburner);
         if (toBLV > 0) token.safeTransfer(recips.blvModule, toBLV);
-
-        // Deterministic remainder: send to acquisitionTreasury if set, else team
-        if (remainder > 0) {
-            address remainderRecipient =
-                recips.acquisitionTreasury != address(0) ? recips.acquisitionTreasury : recips.team;
-            token.safeTransfer(remainderRecipient, remainder);
-        }
 
         // Adjust lastBalance to account for all outflows
         lastBalance[bToken] = token.balanceOf(address(this));

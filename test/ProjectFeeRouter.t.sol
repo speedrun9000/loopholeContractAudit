@@ -6,9 +6,15 @@ import {ProjectFeeRouterUpgradeable} from "../src/ProjectFeeRouterUpgradeable.so
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-/// @dev Mock that accepts informOfFeeDistribution calls (needed because the router calls this on treasury)
+/// @dev Mock that accepts informOfFeeDistribution calls (needed because the router calls this on treasury).
+///      Records cumulative reported amounts per bToken so tests can assert that the marketplace's
+///      view of received fees matches its actual token balance.
 contract MockFeeRecipient {
-    function informOfFeeDistribution(address, uint256) external {}
+    mapping(address => uint256) public reportedFees;
+
+    function informOfFeeDistribution(address bToken, uint256 amount) external {
+        reportedFees[bToken] += amount;
+    }
 }
 
 contract ProjectFeeRouterTest is Test {
@@ -329,5 +335,70 @@ contract ProjectFeeRouterTest is Test {
         assertEq(reserveToken.balanceOf(team), 2000e18);
         assertEq(reserveToken.balanceOf(afterburner), 2000e18);
         assertEq(reserveToken.balanceOf(blvModule), 2000e18);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                  CALLBACK ACCOUNTING (DUST INCLUDED)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SweepCallbackIncludesRemainder() public {
+        // 6667/3333 split on 3 ether produces a 1-wei rounding remainder.
+        uint256 feeAmount = 3 ether;
+        reserveToken.mint(address(router), feeAmount);
+
+        router.sweep(lstBToken);
+
+        // The marketplace's reported fees (used to update checkpointBalance) must equal
+        // its actual token balance — i.e. the dust transferred via the remainder branch
+        // is reflected in the fee-distribution callback.
+        uint256 actualBalance = reserveToken.balanceOf(treasury);
+        uint256 reported = MockFeeRecipient(treasury).reportedFees(lstBToken);
+        assertEq(reported, actualBalance, "callback must report full transferred amount");
+
+        // Sanity: balance equals the slice + remainder.
+        uint256 expectedTreasury = (feeAmount * 6667) / 10_000;
+        uint256 expectedRoyalties = (feeAmount * 3333) / 10_000;
+        uint256 expectedRemainder = feeAmount - expectedTreasury - expectedRoyalties;
+        assertEq(actualBalance, expectedTreasury + expectedRemainder);
+    }
+
+    function test_SweepCallbackFiresForRemainderOnlyTreasury() public {
+        // Config where treasury bps == 0 but acquisitionTreasury is set, alongside a slice
+        // that produces a remainder. The remainder must still go to treasury and trigger
+        // the callback so checkpointBalance reflects the dust.
+        address newBToken = address(0xB1);
+        vm.startPrank(owner);
+        router.registerBToken(newBToken, address(reserveToken));
+        router.setConfig(
+            newBToken,
+            ProjectFeeRouterUpgradeable.FeeConfig({
+                bpsToAcquisitionTreasury: 0,
+                bpsToRoyalties: 3333,
+                bpsToTeam: 6667,
+                bpsToAfterburner: 0,
+                bpsToBLV: 0
+            }),
+            ProjectFeeRouterUpgradeable.Recipients({
+                acquisitionTreasury: treasury,
+                royaltyRecipient: royalties,
+                team: team,
+                afterburner: address(0),
+                blvModule: address(0)
+            })
+        );
+        vm.stopPrank();
+
+        // 7 wei -> royalties=2 (3333*7/10000=2.33), team=4 (6667*7/10000=4.67), remainder=1 -> treasury
+        uint256 feeAmount = 7;
+        reserveToken.mint(address(router), feeAmount);
+        router.sweep(newBToken);
+
+        uint256 expectedRoyalties = (feeAmount * 3333) / 10_000;
+        uint256 expectedTeam = (feeAmount * 6667) / 10_000;
+        uint256 expectedRemainder = feeAmount - expectedRoyalties - expectedTeam;
+        assertGt(expectedRemainder, 0, "test setup: must produce a nonzero remainder");
+
+        assertEq(reserveToken.balanceOf(treasury), expectedRemainder);
+        assertEq(MockFeeRecipient(treasury).reportedFees(newBToken), expectedRemainder);
     }
 }

@@ -17,4 +17,4 @@ no_match_contract = "NftMarketplaceManualTester"
 
 [lint]
 ignore = ["test/**/*"]
-exclude_lints = ["screaming-snake-case-immutable", "mixed-case-variable", "unwrapped-modifier-logic"]exclude_lints = ["screaming-snake-case-immutable", "mixed-case-variable", "unwrapped-modifier-logic"]
+exclude_lints = ["screaming-snake-case-immutable", "mixed-case-variable", "unwrapped-modifier-logic"]

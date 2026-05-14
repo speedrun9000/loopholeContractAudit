@@ -83,7 +83,10 @@ interface IPresale {
      * @param initialDebt Total debt allocated to presalers
      * @param acquisitionTreasury Address to receive portion of raised funds
      * @param bpsToTreasury Basis points of raised funds to treasury (remainder to pool)
-     * @param feeRouter ProjectFeeRouterUpgradeable proxy (set as pool feeRecipient)
+     * @param feeRouter ProjectFeeRouterUpgradeable proxy. Used to look up the
+     *                  per-bToken forwarder (which is what's actually set as
+     *                  pool.feeRecipient). The bToken must be pre-registered on
+     *                  the router before calling finalizeSale.
      * @param baseline Baseline relay address (for calling setFeeRecipient and claimCredit)
      * @param salt Salt for the bToken creation
      * @param circulatingSupplyRecipient Address to receive circulating supply on credit sales (ignored for spot)
@@ -148,6 +151,7 @@ interface IPresale {
     error InvalidFundSplit();
     error InvalidFeeRouting();
     error FeeRecipientSetFailed();
+    error BTokenAddressMismatch();
     error AlreadyClaimed();
     error NothingToClaim();
     error InvalidSaleType();

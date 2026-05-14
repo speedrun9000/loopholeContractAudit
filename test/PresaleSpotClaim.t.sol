@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {PresaleFactory} from "../src/PresaleFactory.sol";
 import {PresaleImplementation} from "../src/PresaleImplementation.sol";
+import {ProjectFeeRouterUpgradeable} from "../src/ProjectFeeRouterUpgradeable.sol";
 import {IPresale} from "../src/interfaces/IPresale.sol";
 import {MockBFactory} from "./mocks/MockBFactory.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
@@ -17,6 +18,7 @@ contract PresaleSpotClaimTest is Test {
     MockBFactory public bFactory;
     UpgradeableBeacon public beacon;
     MockERC20 public presaleToken;
+    ProjectFeeRouterUpgradeable public router;
 
     address public admin = address(0x3);
     address public user1 = address(0x1);
@@ -38,6 +40,29 @@ contract PresaleSpotClaimTest is Test {
         presaleToken.mint(user1, 1000 ether);
         presaleToken.mint(user2, 1000 ether);
         presaleToken.mint(user3, 1000 ether);
+
+        ProjectFeeRouterUpgradeable routerImpl = new ProjectFeeRouterUpgradeable();
+        ERC1967Proxy routerProxy = new ERC1967Proxy(
+            address(routerImpl), abi.encodeCall(routerImpl.initialize, (admin))
+        );
+        router = ProjectFeeRouterUpgradeable(address(routerProxy));
+    }
+
+    /// @dev Pre-register the bToken on the router (deploys forwarder) and finalize.
+    function _registerAndFinalize(PresaleImplementation presale, IPresale.FinalizeParams memory params) internal {
+        IPresale.BFactoryParams memory bfp = presale.getBFactoryParams();
+        uint16 circulatingBps = presale.circulatingSupplyBps();
+        uint256 totalSupply =
+            ((bfp.initialPoolBTokens + params.initialCollateral) * (10_000 + circulatingBps)) / 10_000;
+        address predicted = bFactory.precomputeBTokenAddress(
+            params.name, params.symbol, totalSupply, params.salt, address(factory)
+        );
+        vm.prank(admin);
+        router.registerBToken(predicted, address(presaleToken));
+        params.feeRouter = address(router);
+        vm.warp(block.timestamp + 8 days);
+        vm.prank(admin);
+        presale.finalizeSale(params);
     }
 
     function _deploySpotPresale(uint256 softCap, uint256 hardCap, uint16 circulatingBps)
@@ -154,9 +179,7 @@ contract PresaleSpotClaimTest is Test {
         presale.deposit(0, 100 ether, new bytes32[](0));
 
         // Finalize — verify PresaleFinalized event
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Spot sale should be immediately finalized
         assertTrue(presale.isFinalized());
@@ -194,9 +217,7 @@ contract PresaleSpotClaimTest is Test {
         presale.deposit(0, 40 ether, new bytes32[](0));
 
         // Finalize
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         uint256 totalClaimable = presale.getTotalClaimableTokens();
 
@@ -236,9 +257,7 @@ contract PresaleSpotClaimTest is Test {
         presale.deposit(1, 20 ether, new bytes32[](0));
 
         // Finalize
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Claim should include both phases (50 ether total)
         uint256 totalClaimable = presale.getTotalClaimableTokens();
@@ -265,9 +284,7 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user1);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         uint256 totalClaimable = presale.getTotalClaimableTokens();
 
@@ -291,9 +308,7 @@ contract PresaleSpotClaimTest is Test {
         params.initialCollateral = 500 ether;
         params.initialDebt = 50 ether;
 
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(params);
+        _registerAndFinalize(presale, params);
 
         uint256 totalClaimable = presale.getTotalClaimableTokens();
 
@@ -414,9 +429,7 @@ contract PresaleSpotClaimTest is Test {
         IPresale.FinalizeParams memory creditParams = _defaultFinalizeParams();
         creditParams.circulatingSupplyRecipient = address(0xBBBB);
 
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(creditParams);
+        _registerAndFinalize(presale, creditParams);
         vm.prank(admin);
         presale.completeFinalization();
 
@@ -433,9 +446,7 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user1);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         vm.prank(user1);
         presale.claimSpot();
@@ -454,9 +465,7 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user1);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // user2 never deposited
         vm.prank(user2);
@@ -485,9 +494,7 @@ contract PresaleSpotClaimTest is Test {
         assertEq(presale.getClaimableAmount(user1), 0);
 
         // After finalization: returns non-zero claimable amount
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         uint256 claimable = presale.getClaimableAmount(user1);
         assertEq(claimable, presale.getTotalClaimableTokens());
@@ -536,9 +543,7 @@ contract PresaleSpotClaimTest is Test {
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.initialCollateral = initialCollateral;
 
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(params);
+        _registerAndFinalize(presale, params);
 
         uint256 totalClaimable = presale.getTotalClaimableTokens();
 
@@ -645,9 +650,7 @@ contract PresaleSpotClaimTest is Test {
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.initialCollateral = initialCollateral;
 
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(params);
+        _registerAndFinalize(presale, params);
         assertTrue(presale.isFinalized());
 
         uint256 totalClaimable = presale.getTotalClaimableTokens();
@@ -790,9 +793,7 @@ contract PresaleSpotClaimTest is Test {
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.initialCollateral = initialCollateral;
 
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(params);
+        _registerAndFinalize(presale, params);
 
         uint256 totalClaimable = presale.getTotalClaimableTokens();
         address bToken = presale.getCreatedToken();
@@ -872,9 +873,7 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user1);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Spot sale: finalized immediately after finalizeSale
         assertTrue(presale.isFinalized());

@@ -31,6 +31,13 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         address blvModule;
     }
 
+    struct PurchaseHistoryAggregators {
+        // cumulative number of NFTs purchased from the collection
+        uint256 numPurchases;
+        // cumulative total of `bTokenForCollection[collection]` paid for the above NFTs
+        uint256 cumulativeWethValuePaid;
+    }
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -62,13 +69,14 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     error ZeroRecipientForNonZeroBps();
     error OnlySwapper();
     error CannotSwapOfferToken();
+    error CollectionNotRegistered();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice ERC20 offered by this contract in exchange for NFTs
-    IERC20 public offerToken;
+    /// @notice ERC20 accepted by this contract in exchange for NFTs
+    IERC20 public WETH;
 
     /// @notice Address trusted by this contract to forward it fees and inform it of the bToken the fees were earned by
     address public feeRouter;
@@ -90,11 +98,11 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     /// @notice Mapping: NFT collection address => The UTC timestamp at which a checkpoint was last performed for the collection
     mapping(address => uint256) public lastCheckpointTimestamp;
 
-    /// @notice Mapping: NFT collection address => The amount of `offerToken` held by this contract
+    /// @notice Mapping: NFT collection address => The amount of `bTokenForCollection[collection]` held by this contract
     ///        at `lastCheckpointTimestamp[collection]`, which are specifically from fees credited to the collection
     mapping(address => uint256) public checkpointBalance;
 
-    /// @notice Mapping: NFT collection address => the amount of `offerToken` which was offered by this contract
+    /// @notice Mapping: NFT collection address => the amount of `bTokenForCollection[collection]` which was offered by this contract
     ///        for an NFT from the collection, at `lastCheckpointTimestamp[collection]`
     mapping(address => uint256) public offerAtCheckpoint;
 
@@ -111,11 +119,17 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     /// @notice Mapping: NFT collection address => corresponding bToken
     mapping(address => address) public bTokenForCollection;
 
+    /// @notice Mapping: NFT collection address => sales proceeds in `WETH` made from selling NFTs from the collection
+    mapping(address => uint256) public nftSalesProceeds;
+
     /// @notice Fee split config per bToken
     mapping(address => BTokenFeeConfig) internal _feeConfig;
 
     /// @notice Recipient addresses per bToken
     mapping(address => BTokenRecipients) internal _recipients;
+
+    /// @notice Mapping: NFT collection address => summary of purchases
+    mapping(address => PurchaseHistoryAggregators) internal _purchaseHistoryAggregators;
 
     /// @dev Storage gap for future upgrades
     uint256[50] private __gap;
@@ -123,12 +137,15 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     /*//////////////////////////////////////////////////////////////
                               INITIALIZER
     //////////////////////////////////////////////////////////////*/
+    constructor() {
+        _disableInitializers();
+    }
 
-    function initialize(IERC20 _offerToken, address _feeRouter, address initialOwner, IBSwap _bSwap, address _swapper)
+    function initialize(IERC20 _WETH, address _feeRouter, address initialOwner, IBSwap _bSwap, address _swapper)
         external
         initializer
     {
-        offerToken = _offerToken;
+        WETH = _WETH;
         feeRouter = _feeRouter;
         __Ownable_init(initialOwner);
         bSwap = _bSwap;
@@ -139,7 +156,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice The current amount of `offerToken` offered by this contract for an NFT from `nftCollection`, at the present time.
+    /// @notice The current amount of `bTokenForCollection[collection]` offered by this contract for an NFT from `nftCollection`, at the present time.
     /// @dev Capped at `checkpointBalance[nftCollection]`.
     function offerPrice(address nftCollection) public view returns (uint256) {
         uint256 maxOffer = offerAtCheckpoint[nftCollection] + (block.timestamp - lastCheckpointTimestamp[nftCollection])
@@ -166,13 +183,14 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     }
 
     function _startingPrice(address nftCollection) internal view returns (uint256) {
-        return IERC20(bTokenForCollection[nftCollection]).totalSupply();
+        PurchaseHistoryAggregators storage pha = _purchaseHistoryAggregators[nftCollection];
+        return (pha.cumulativeWethValuePaid * 20) / pha.numPurchases;
     }
 
     /*//////////////////////////////////////////////////////////////
                             STATE-MODIFYING FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    /// @notice Sells the `tokenId` of `nftCollection` to this contract for `offerPrice(nftCollection)` in `offerToken`
+    /// @notice Sells the `tokenId` of `nftCollection` to this contract for `offerPrice(nftCollection)` in `bTokenForCollection[nftCollection]`
     /// @dev Will revert if `minPrice > offerPrice(nftCollection)`, ensuring the user receives *at least* `minPrice`
     function sellNftToVault(address nftCollection, uint256 tokenId, uint256 minPrice) external whenNotPaused {
         uint256 _currentOffer = offerPrice(nftCollection);
@@ -188,10 +206,33 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         // set offer to the minimum of (a) 75% of the price being paid and (b) the token balance of this contract after the payment
         offerAtCheckpoint[nftCollection] = Math.min(_currentOffer * 75 / 100, checkpointBalance[nftCollection]);
 
+        // update purchase aggregators for the collection
+        PurchaseHistoryAggregators storage pha = _purchaseHistoryAggregators[nftCollection];
+        pha.numPurchases += 1;
+        // convert bToken value to WETH for tracking purposes
+        // TODO: look at manipulability of this -- perhaps consider reversion if bSwap address is "hot" when this fnc is called
+        (
+            uint256 wethValue, /* uint256 feesReceived_ */, /* uint256 slippage_ */
+        ) = bSwap.quoteSellExactIn({_bToken: bTokenForCollection[nftCollection], _amountIn: _currentOffer});
+        pha.cumulativeWethValuePaid += _currentOffer;
+
+        // update the min auction price for the collection
+        uint256 updatedMeanAcquisitionPrice = pha.cumulativeWethValuePaid / pha.numPurchases;
+        uint256 existingMinAuctionPrice = minAuctionPrice[nftCollection];
+        // in this case, simply increase minAuctionPrice to the new mean acquisition price
+        if (updatedMeanAcquisitionPrice > existingMinAuctionPrice) {
+            _modifyMinAuctionPrice(nftCollection, updatedMeanAcquisitionPrice);
+        /// in this case, we will decrease the min auction price, but want it to be stickier, so we
+        /// sum 95% of the old minimum with 5% of the new mean acquisition, which caps the decrease at 5% of the current value
+        } else {
+            uint256 newAuctionMin = (existingMinAuctionPrice * 0.95e18 + updatedMeanAcquisitionPrice * 0.05e18) / 1e18;
+            _modifyMinAuctionPrice(nftCollection, updatedMeanAcquisitionPrice);
+        }
+
         emit NftAcquired(nftCollection, msg.sender, tokenId, _currentOffer);
         // start auction for the NFT if one is not already ongoing
         startAuction(nftCollection);
-        offerToken.safeTransfer(msg.sender, _currentOffer);
+        IERC20(bTokenForCollection[nftCollection]).safeTransfer(msg.sender, _currentOffer);
     }
 
     /// @notice If applicable / possible, starts a new Dutch auction for an NFT from `nftCollection`
@@ -199,6 +240,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     /// @dev This will revert if no auction is ongoing *AND* this contract has no NFT to auction from the `nftCollection`
     function startAuction(address nftCollection) public whenNotPaused {
         if (auctionStartTimestamp[nftCollection] == 0) {
+            require(auctionDuration[nftCollection] != 0, CollectionNotRegistered());
             require(IERC721(nftCollection).balanceOf(address(this)) != 0, NoNftToAuction());
 
             auctionStartTimestamp[nftCollection] = block.timestamp;
@@ -206,8 +248,8 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         }
     }
 
-    /// @notice Buys the `tokenId` of `nftCollection` to this contract, for `nftCost(nftCollection)` in `bTokenForCollection[nftCollection]`
-    /// @dev Caller will make payment in `bTokenForCollection[nftCollection]`
+    /// @notice Buys the `tokenId` of `nftCollection` from this contract, for `nftCost(nftCollection)` in `WETH`
+    /// @dev Caller will make payment in `WETH`
     /// @dev Will revert if `nftCost(nftCollection) > maxPrice`
     function buyNftFromVault(address nftCollection, uint256 tokenId, uint256 maxPrice) external whenNotPaused {
         uint256 _currentPrice = nftCost(nftCollection);
@@ -225,7 +267,9 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
             auctionStartTimestamp[nftCollection] = 0;
         }
 
-        IERC20(bTokenForCollection[nftCollection]).safeTransferFrom(msg.sender, address(this), _currentPrice);
+        nftSalesProceeds[nftCollection] += _currentPrice;
+
+        WETH.safeTransferFrom(msg.sender, address(this), _currentPrice);
 
         IERC721(nftCollection).transferFrom(address(this), msg.sender, tokenId);
     }
@@ -321,6 +365,11 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
             uint256 _auctionStartTimestamp = auctionStartTimestamp[nftCollection];
             if (_auctionStartTimestamp != 0) {
                 uint256 elapsedTime = block.timestamp - _auctionStartTimestamp;
+                // cap elapsed time at duration
+                uint256 _duration = auctionDuration[nftCollection];
+                if (elapsedTime > _duration) {
+                    elapsedTime = _duration;
+                }
                 // calculate the appropriate elapsed time for the same current price
                 uint256 startingPrice = _startingPrice(nftCollection);
                 // should be less time because price now falls faster -- divide by larger number, multiply by smaller number
@@ -361,13 +410,22 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         swapper = newSwapper;
     }
 
-    /// @notice Called by the `feeRouter` to inform this contract of a fee distribution being performed for the `bToken`, of `amountFees` of the `offerToken`
+    /// @notice Called by the `feeRouter` to inform this contract of a fee distribution being performed for the `bToken`, of `amountFees` of the `bToken`
     function informOfFeeDistribution(address bToken, uint256 amountFees) external {
         require(msg.sender == feeRouter, OnlyFeeRouter());
         address nftCollection = collectionForBToken[bToken];
         require(nftCollection != address(0), NftCollectionNotSetForBToken());
 
         _performCheckpoint(nftCollection, amountFees);
+    }
+
+    /// @notice Permissionless function, allowing the caller to donate `amount` of `bToken`, to be treated like fees for the `bToken`
+    function donate(address bToken, uint256 amount) external {
+        address nftCollection = collectionForBToken[bToken];
+        require(nftCollection != address(0), NftCollectionNotSetForBToken());
+
+        _performCheckpoint(nftCollection, amount);
+        IERC20(bToken).safeTransferFrom(msg.sender, address(this), amount);
     }
 
     function _performCheckpoint(address nftCollection, uint256 amountFees) internal {
@@ -377,21 +435,23 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         emit Checkpoint(nftCollection, offerAtCheckpoint[nftCollection], checkpointBalance[nftCollection]);
     }
 
-    /// @notice Called by the `swapper` to exchange tokens earned from NFT sales for `offerToken` and distribute the proceeds
+    /// @notice Called by the `swapper` to exchange `WETH` tokens earned from NFT sales for bTokens and distribute the proceeds
     /// @dev Proceeds are automatically split according to the fee config for the bToken
     function performSwap(address bToken, uint256 tokensIn, uint256 minOut) external {
         require(msg.sender == swapper, OnlySwapper());
-        require(bToken != address(offerToken), CannotSwapOfferToken());
+        require(bToken != address(WETH), CannotSwapOfferToken());
+        address nftCollection = collectionForBToken[bToken];
+        nftSalesProceeds[nftCollection] -= tokensIn;
         IERC20(bToken).approve(address(bSwap), tokensIn);
         (
-            uint256 amountOut, /*uint256 fee_*/
-        ) = bSwap.sellTokensExactIn({_bToken: bToken, _amountIn: tokensIn, _limitAmount: minOut});
+            uint256 amountOut, /*uint256 feesReceived_*/
+        ) = bSwap.buyTokensExactIn({_bToken: bToken, _amountIn: tokensIn, _limitAmount: minOut});
         emit SwapPerformed(bToken, tokensIn, amountOut);
         BTokenFeeConfig storage feeConfig = _feeConfig[address(bToken)];
         BTokenRecipients storage recipients = _recipients[address(bToken)];
         uint256 toAfterburner = (amountOut * feeConfig.bpsToAfterburner) / 10_000;
         uint256 toBLV = (amountOut * feeConfig.bpsToBLV) / 10_000;
-        if (toAfterburner > 0) IERC20(bToken).safeTransfer(recipients.afterburner, toAfterburner);
-        if (toBLV > 0) IERC20(bToken).safeTransfer(recipients.blvModule, toBLV);
+        if (toAfterburner > 0) IERC20(WETH).safeTransfer(recipients.afterburner, toAfterburner);
+        if (toBLV > 0) IERC20(WETH).safeTransfer(recipients.blvModule, toBLV);
     }
 }

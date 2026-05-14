@@ -8,11 +8,32 @@ import {MockERC721} from "./mocks/MockERC721.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBSwap} from "../src/interfaces/IBswap.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+
+contract MockBSwap {
+    function buyTokensExactIn(address, uint256 amountIn, uint256)
+        external
+        pure
+        returns (uint256 amountOut, uint256 fees)
+    {
+        return (amountIn, fees);
+    }
+
+    function quoteSellExactIn(address, uint256 amountIn)
+        external
+        pure
+        returns (uint256 amountOut, uint256 fees, uint256 slippage)
+    {
+        return (amountIn, fees, slippage);
+    }
+}
 
 contract NftMarketplaceTests is Test {
     NftMarketplace public nftMarketplace;
     MockERC20 public mockERC20;
+    MockERC20 public mockWETH;
     MockERC721 public mockERC721;
+    MockBSwap public mockBSwap;
 
     address public feeRouter = address(1111);
     address public initialOwner = address(this);
@@ -20,17 +41,34 @@ contract NftMarketplaceTests is Test {
     uint256 public auctionDuration = 1 weeks;
     address public afterburner = address(2222);
     address public blvModule = address(3333);
-    IBSwap public bSwap = IBSwap(address(4444));
+    IBSwap public bSwap;
     address public swapper = address(this);
 
     function setUp() public {
         mockERC20 = new MockERC20("Test ERC20", "TEST20", 18);
+        mockWETH = new MockERC20("Wrapped Ether", "WETH", 18);
         mockERC721 = new MockERC721("Test ERC721", "TEST721");
+        mockBSwap = new MockBSwap();
+        bSwap = IBSwap(address(mockBSwap));
 
-        nftMarketplace = new NftMarketplace();
-        nftMarketplace.initialize({
-            _offerToken: mockERC20, _feeRouter: feeRouter, initialOwner: initialOwner, _bSwap: bSwap, _swapper: swapper
-        });
+        NftMarketplace nftMarketplaceImplementation = new NftMarketplace();
+        bytes memory marketplaceInitializationData = abi.encodeWithSelector(
+            NftMarketplace.initialize.selector,
+            mockWETH, // IERC20 _WETH,
+            feeRouter, // address _feeRouter,
+            initialOwner, // address initialOwner,
+            bSwap, // IBSwap _bSwap,
+            swapper // address _swapper
+        );
+        nftMarketplace = NftMarketplace(
+            address(
+                new TransparentUpgradeableProxy({
+                    _logic: address(nftMarketplaceImplementation),
+                    initialOwner: initialOwner,
+                    _data: marketplaceInitializationData
+                })
+            )
+        );
 
         NftMarketplace.BTokenFeeConfig memory feeConfig =
             NftMarketplace.BTokenFeeConfig({bpsToAfterburner: 5000, bpsToBLV: 5000});
@@ -131,24 +169,17 @@ contract NftMarketplaceTests is Test {
     function test_nftCost() public {
         require(nftMarketplace.nftCost(address(mockERC721)) == type(uint256).max, "incorrect nftCost 1");
 
-        mockERC20.mint(address(this), 1e24);
-        uint256 totalSupply = mockERC20.totalSupply();
-        require(totalSupply != 0, "bad test setup");
-
-        mockERC721.mint(address(nftMarketplace), placeholderTokenId);
-        vm.expectEmit(true, true, true, true, address(nftMarketplace));
-        emit NftMarketplace.AuctionStarted(address(mockERC721));
-        nftMarketplace.startAuction(address(mockERC721));
+        uint256 startingPrice = _sellNftAndGetStartingPrice(1e18, placeholderTokenId);
         require(
             nftMarketplace.auctionStartTimestamp(address(mockERC721)) == block.timestamp,
             "auctionStartTimestamp not set correctly"
         );
-        require(nftMarketplace.nftCost(address(mockERC721)) == totalSupply, "incorrect nftCost 2");
+        require(nftMarketplace.nftCost(address(mockERC721)) == startingPrice, "incorrect nftCost 2");
 
         vm.warp(block.timestamp + auctionDuration / 2);
         uint256 _nftCost = nftMarketplace.nftCost(address(mockERC721));
         uint256 minAuctionPrice = nftMarketplace.minAuctionPrice(address(mockERC721));
-        uint256 approxCost = totalSupply - (totalSupply - minAuctionPrice) / 2;
+        uint256 approxCost = startingPrice - (startingPrice - minAuctionPrice) / 2;
         uint256 tolerance = 1e6;
         require(_nftCost >= approxCost - tolerance, "incorrect nftCost 3 - nftCost too low");
         require(_nftCost <= approxCost + tolerance, "incorrect nftCost 3 - nftCost too high");
@@ -164,41 +195,38 @@ contract NftMarketplaceTests is Test {
         require(nftMarketplace.nftCost(address(mockERC721)) == minAuctionPrice, "incorrect nftCost 6");
     }
 
-    function test_fuzz_nftCost(uint256 startingSupply, uint256 timeToWarpForward) public {
+    function test_fuzz_nftCost(uint256 amountFees, uint256 timeToWarpForward) public {
         // sanity
-        vm.assume(startingSupply != 0);
-        vm.assume(type(uint256).max - timeToWarpForward > block.timestamp);
-        // prevent under-/over-flows
-        uint256 minAuctionPrice = nftMarketplace.minAuctionPrice(address(mockERC721));
-        vm.assume(startingSupply >= minAuctionPrice);
-        if (timeToWarpForward != 0) {
-            vm.assume(type(uint256).max / timeToWarpForward > startingSupply - minAuctionPrice);
-        }
+        vm.assume(amountFees >= 1e4);
+        vm.assume(amountFees < 1e36);
+        timeToWarpForward = bound(timeToWarpForward, 0, auctionDuration * 2);
 
         require(nftMarketplace.nftCost(address(mockERC721)) == type(uint256).max, "incorrect nftCost 1");
 
-        mockERC20.mint(address(this), startingSupply);
-        uint256 totalSupply = mockERC20.totalSupply();
-        require(totalSupply != 0, "bad test setup");
-
-        mockERC721.mint(address(nftMarketplace), placeholderTokenId);
-        vm.expectEmit(true, true, true, true, address(nftMarketplace));
-        emit NftMarketplace.AuctionStarted(address(mockERC721));
-        nftMarketplace.startAuction(address(mockERC721));
+        uint256 startingPrice = _sellNftAndGetStartingPrice(amountFees, placeholderTokenId);
         require(
             nftMarketplace.auctionStartTimestamp(address(mockERC721)) == block.timestamp,
             "auctionStartTimestamp not set correctly"
         );
-        require(nftMarketplace.nftCost(address(mockERC721)) == totalSupply, "incorrect nftCost 2");
+        require(nftMarketplace.nftCost(address(mockERC721)) == startingPrice, "incorrect nftCost 2");
 
         vm.warp(block.timestamp + timeToWarpForward);
+        uint256 minAuctionPrice = nftMarketplace.minAuctionPrice(address(mockERC721));
         uint256 _nftCost = nftMarketplace.nftCost(address(mockERC721));
         if (timeToWarpForward >= auctionDuration) {
             assertEq(_nftCost, minAuctionPrice, "nftCost should be minAuctionPrice");
         } else {
-            uint256 expectedCost = totalSupply - (totalSupply - minAuctionPrice) * timeToWarpForward / auctionDuration;
+            uint256 expectedCost =
+                startingPrice - (startingPrice - minAuctionPrice) * timeToWarpForward / auctionDuration;
             assertEq(_nftCost, expectedCost, "nftCost should be expectedCost");
         }
+    }
+
+    function _sellNftAndGetStartingPrice(uint256 amountFees, uint256 tokenId) internal returns (uint256) {
+        mockERC721.mint(address(this), tokenId);
+        _test_sellNftToVault(address(this), amountFees, tokenId);
+        uint256 acquisitionPrice = nftMarketplace.minAuctionPrice(address(mockERC721));
+        return acquisitionPrice * 20;
     }
 
     function test_fuzz_sellNftToVault(uint256 amountFees, uint256 tokenId) public {
@@ -294,13 +322,13 @@ contract NftMarketplaceTests is Test {
     function _test_buyNftFromVault(uint256 tokenId) internal {
         vm.warp(block.timestamp + auctionDuration - 100);
 
-        mockERC20.mint(address(nftMarketplace), 1e24);
-        mockERC20.mint(address(this), 1e24);
+        mockWETH.mint(address(this), 1e24);
         uint256 nftCost = nftMarketplace.nftCost(address(mockERC721));
 
         uint256 maxPrice = nftCost + 1e5;
-        mockERC20.approve(address(nftMarketplace), maxPrice);
-        uint256 purchaserBalanceBefore = mockERC20.balanceOf(address(this));
+        mockWETH.approve(address(nftMarketplace), maxPrice);
+        uint256 purchaserBalanceBefore = mockWETH.balanceOf(address(this));
+        uint256 proceedsBefore = nftMarketplace.nftSalesProceeds(address(mockERC721));
 
         uint256 nftsToSell = mockERC721.balanceOf(address(nftMarketplace));
 
@@ -324,7 +352,11 @@ contract NftMarketplaceTests is Test {
             );
         }
 
-        require(mockERC20.balanceOf(address(this)) == purchaserBalanceBefore - nftCost, "purchaser paid wrong amount");
+        require(mockWETH.balanceOf(address(this)) == purchaserBalanceBefore - nftCost, "purchaser paid wrong amount");
+        require(
+            nftMarketplace.nftSalesProceeds(address(mockERC721)) == proceedsBefore + nftCost,
+            "sales proceeds not tracked correctly"
+        );
         require(mockERC721.balanceOf(address(nftMarketplace)) == nftsToSell - 1, "nft not transfered out");
     }
 
@@ -439,6 +471,8 @@ contract NftMarketplaceTests is Test {
 
         mockERC20.mint(address(nftMarketplace), 1e40);
         mockERC20.mint(address(this), 1e40);
+        uint256 startingPrice = nftMarketplace.minAuctionPrice(address(mockERC721)) * 20;
+        minAuctionPriceAfter = bound(minAuctionPriceAfter, 0, startingPrice);
         uint256 nftCostBefore = nftMarketplace.nftCost(address(mockERC721));
         uint256 elapsedTimeBefore = block.timestamp - nftMarketplace.auctionStartTimestamp(address(mockERC721));
 
@@ -460,13 +494,13 @@ contract NftMarketplaceTests is Test {
             elapsedTimeBefore,
             "elapsed time should never increase as a result of calling `modifyMinAuctionPrice`"
         );
-        if (nftCostAfter != minAuctionPriceAfter) {
-            assertGe(
-                nftCostAfter,
-                nftCostBefore,
-                "nft cost should not decrease as a result of calling `modifyMinAuctionPrice` unless it is equal to the min price"
-            );
-        }
+        assertGe(
+            nftCostAfter, nftCostBefore, "nft cost should not decrease as a result of calling `modifyMinAuctionPrice`"
+        );
+    }
+
+    function test_modifyMinAuctionPrice_auctionOngoing_priceDoesNotDecrease() public {
+        test_fuzz_modifyMinAuctionPrice_auctionOngoing(40e18, 20e18, 40 weeks);
     }
 
     function test_fuzz_setSwapper(address newSwapper) public {

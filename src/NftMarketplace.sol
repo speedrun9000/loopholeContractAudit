@@ -212,7 +212,8 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         // convert bToken value to WETH for tracking purposes
         // TODO: look at manipulability of this -- perhaps consider reversion if bSwap address is "hot" when this fnc is called
         (
-            uint256 wethValue, /* uint256 feesReceived_ */, /* uint256 slippage_ */
+            uint256 wethValue,
+            /* uint256 feesReceived_ */, /* uint256 slippage_ */
         ) = bSwap.quoteSellExactIn({_bToken: bTokenForCollection[nftCollection], _amountIn: _currentOffer});
         pha.cumulativeWethValuePaid += wethValue;
 
@@ -222,11 +223,13 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         // in this case, simply increase minAuctionPrice to the new mean acquisition price
         if (updatedMeanAcquisitionPrice > existingMinAuctionPrice) {
             _modifyMinAuctionPrice(nftCollection, updatedMeanAcquisitionPrice);
-        /// in this case, we will decrease the min auction price, but want it to be stickier, so we
-        /// sum 95% of the old minimum with 5% of the new mean acquisition, which caps the decrease at 5% of the current value
+            /// in this case, we will decrease the min auction price, but want it to be stickier, so we
+            /// sum 95% of the old minimum with 5% of the new mean acquisition, which caps the decrease at 5% of the current value
+            /// The realized decrease should be 5% of the difference between the new mean and the existing min.
         } else {
             uint256 newAuctionMin = (existingMinAuctionPrice * 0.95e18 + updatedMeanAcquisitionPrice * 0.05e18) / 1e18;
-            _modifyMinAuctionPrice(nftCollection, newAuctionMin);
+            // use Math.min to address the edge case where newAuctionMin would be less than the startingPrice
+            _modifyMinAuctionPrice(nftCollection, Math.min(newAuctionMin, _startingPrice(nftCollection)));
         }
 
         emit NftAcquired(nftCollection, msg.sender, tokenId, _currentOffer);

@@ -155,6 +155,7 @@ interface IPresale {
     error PoolAlreadyCreated();
     error InvalidCirculatingSupplyRecipient();
     error SelfCreditClaimGracePeriodActive();
+    error PhaseAlreadyStarted();
 
     /*//////////////////////////////////////////////////////////////
                             EXTERNAL FUNCTIONS

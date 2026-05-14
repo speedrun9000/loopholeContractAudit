@@ -60,10 +60,10 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
     mapping(address => uint256) public accrued;
 
     /// @notice Fee split config per bToken
-    mapping(address => FeeConfig) internal _cfg;
+    mapping(address => FeeConfig) internal _feeConfig;
 
     /// @notice Recipient addresses per bToken
-    mapping(address => Recipients) internal _recips;
+    mapping(address => Recipients) internal _recipients;
 
     /// @notice Per-bToken fee forwarder (deployed by registerBToken). This is the
     ///         address that should be passed to BFactory as the pool's feeRecipient.
@@ -78,7 +78,7 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
 
     event Registered(address indexed bToken, address indexed reserveToken, address indexed forwarder);
 
-    event ConfigSet(address indexed bToken, FeeConfig cfg, Recipients recips);
+    event ConfigSet(address indexed bToken, FeeConfig feeConfig, Recipients recipients);
 
     event FeesReceived(address indexed bToken, uint256 amount);
 
@@ -152,36 +152,39 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
     /**
      * @notice Set the fee config and recipients for a bToken.
      * @param bToken The bToken address (must be registered)
-     * @param cfg Fee split in basis points (must sum to 10000)
-     * @param recips Recipient addresses
+     * @param feeConfig Fee split in basis points (must sum to 10000)
+     * @param recipients Recipient addresses
      */
-    function setConfig(address bToken, FeeConfig calldata cfg, Recipients calldata recips) external onlyOwner {
+    function setConfig(address bToken, FeeConfig calldata feeConfig, Recipients calldata recipients)
+        external
+        onlyOwner
+    {
         if (reserve[bToken] == address(0)) revert BTokenNotRegistered();
 
-        uint256 sum = uint256(cfg.bpsToAcquisitionTreasury) + uint256(cfg.bpsToRoyalties) + uint256(cfg.bpsToTeam)
-            + uint256(cfg.bpsToAfterburner) + uint256(cfg.bpsToBLV);
+        uint256 sum = uint256(feeConfig.bpsToAcquisitionTreasury) + uint256(feeConfig.bpsToRoyalties)
+            + uint256(feeConfig.bpsToTeam) + uint256(feeConfig.bpsToAfterburner) + uint256(feeConfig.bpsToBLV);
         if (sum != 10_000) revert InvalidBpSum();
 
-        if (cfg.bpsToAcquisitionTreasury > 0 && recips.acquisitionTreasury == address(0)) {
+        if (feeConfig.bpsToAcquisitionTreasury > 0 && recipients.acquisitionTreasury == address(0)) {
             revert ZeroRecipientForNonZeroBps();
         }
-        if (cfg.bpsToRoyalties > 0 && recips.royaltyRecipient == address(0)) {
+        if (feeConfig.bpsToRoyalties > 0 && recipients.royaltyRecipient == address(0)) {
             revert ZeroRecipientForNonZeroBps();
         }
-        if (cfg.bpsToTeam > 0 && recips.team == address(0)) {
+        if (feeConfig.bpsToTeam > 0 && recipients.team == address(0)) {
             revert ZeroRecipientForNonZeroBps();
         }
-        if (cfg.bpsToAfterburner > 0 && recips.afterburner == address(0)) {
+        if (feeConfig.bpsToAfterburner > 0 && recipients.afterburner == address(0)) {
             revert ZeroRecipientForNonZeroBps();
         }
-        if (cfg.bpsToBLV > 0 && recips.blvModule == address(0)) {
+        if (feeConfig.bpsToBLV > 0 && recipients.blvModule == address(0)) {
             revert ZeroRecipientForNonZeroBps();
         }
 
-        _cfg[bToken] = cfg;
-        _recips[bToken] = recips;
+        _feeConfig[bToken] = feeConfig;
+        _recipients[bToken] = recipients;
 
-        emit ConfigSet(bToken, cfg, recips);
+        emit ConfigSet(bToken, feeConfig, recipients);
     }
 
     /**
@@ -204,23 +207,22 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
      * @param bToken The bToken whose fees to sweep
      */
     function sweep(address bToken) external nonReentrant {
-        address r = reserve[bToken];
-        if (r == address(0)) revert BTokenNotRegistered();
+        address reserveToken = reserve[bToken];
+        if (reserveToken == address(0)) revert BTokenNotRegistered();
 
         uint256 delta = accrued[bToken];
         if (delta == 0) revert NothingToSweep();
         accrued[bToken] = 0;
 
-        IERC20 token = IERC20(r);
+        IERC20 token = IERC20(reserveToken);
+        FeeConfig memory feeConfig = _feeConfig[bToken];
+        Recipients memory recipients = _recipients[bToken];
 
-        FeeConfig memory cfg = _cfg[bToken];
-        Recipients memory recips = _recips[bToken];
-
-        uint256 toTreasury = (delta * cfg.bpsToAcquisitionTreasury) / 10_000;
-        uint256 toRoyalties = (delta * cfg.bpsToRoyalties) / 10_000;
-        uint256 toTeam = (delta * cfg.bpsToTeam) / 10_000;
-        uint256 toAfterburner = (delta * cfg.bpsToAfterburner) / 10_000;
-        uint256 toBLV = (delta * cfg.bpsToBLV) / 10_000;
+        uint256 toTreasury = (delta * feeConfig.bpsToAcquisitionTreasury) / 10_000;
+        uint256 toRoyalties = (delta * feeConfig.bpsToRoyalties) / 10_000;
+        uint256 toTeam = (delta * feeConfig.bpsToTeam) / 10_000;
+        uint256 toAfterburner = (delta * feeConfig.bpsToAfterburner) / 10_000;
+        uint256 toBLV = (delta * feeConfig.bpsToBLV) / 10_000;
 
         uint256 distributed = toTreasury + toRoyalties + toTeam + toAfterburner + toBLV;
         uint256 remainder = delta - distributed;
@@ -229,7 +231,7 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
         // reported amount aligned with what was actually transferred, so a marketplace
         // acquisitionTreasury's checkpointBalance includes the rounding dust.
         if (remainder > 0) {
-            if (recips.acquisitionTreasury != address(0)) {
+            if (recipients.acquisitionTreasury != address(0)) {
                 toTreasury += remainder;
             } else {
                 toTeam += remainder;
@@ -238,17 +240,17 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
 
         // Transfer slices
         if (toTreasury > 0) {
-            token.safeTransfer(recips.acquisitionTreasury, toTreasury);
+            token.safeTransfer(recipients.acquisitionTreasury, toTreasury);
             // TODO: note that `NftMarketplace` assumes the incoming token matches its fixed `offerToken`
-            NftMarketplace(recips.acquisitionTreasury).informOfFeeDistribution({bToken: bToken, amountFees: toTreasury});
+            NftMarketplace(recipients.acquisitionTreasury).informOfFeeDistribution({
+                bToken: bToken,
+                amountFees: toTreasury
+            });
         }
-        if (toRoyalties > 0) token.safeTransfer(recips.royaltyRecipient, toRoyalties);
-        if (toTeam > 0) token.safeTransfer(recips.team, toTeam);
-        if (toAfterburner > 0) token.safeTransfer(recips.afterburner, toAfterburner);
-        if (toBLV > 0) token.safeTransfer(recips.blvModule, toBLV);
-
-        // Adjust lastBalance to account for all outflows
-        lastBalance[bToken] = token.balanceOf(address(this));
+        if (toRoyalties > 0) token.safeTransfer(recipients.royaltyRecipient, toRoyalties);
+        if (toTeam > 0) token.safeTransfer(recipients.team, toTeam);
+        if (toAfterburner > 0) token.safeTransfer(recipients.afterburner, toAfterburner);
+        if (toBLV > 0) token.safeTransfer(recipients.blvModule, toBLV);
 
         emit Swept(bToken, delta, toTreasury, toRoyalties, toTeam, toAfterburner, toBLV, remainder);
     }
@@ -258,11 +260,11 @@ contract ProjectFeeRouterUpgradeable is Initializable, OwnableUpgradeable, UUPSU
     //////////////////////////////////////////////////////////////*/
 
     function getConfig(address bToken) external view returns (FeeConfig memory) {
-        return _cfg[bToken];
+        return _feeConfig[bToken];
     }
 
     function getRecipients(address bToken) external view returns (Recipients memory) {
-        return _recips[bToken];
+        return _recipients[bToken];
     }
 
     /*//////////////////////////////////////////////////////////////

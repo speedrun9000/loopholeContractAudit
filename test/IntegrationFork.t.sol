@@ -327,14 +327,14 @@ contract IntegrationForkTest is Test {
             merkleRoot: merkleRoot0
         });
         phases[1] = IPresale.PresalePhaseConfig({
-            startTime: block.timestamp + 2 days,
+            startTime: block.timestamp + 2 days + 1,
             endTime: block.timestamp + 5 days,
             totalPhaseCap: 100 ether,
             userAllocationCap: 10 ether,
             merkleRoot: merkleRoot1
         });
         phases[2] = IPresale.PresalePhaseConfig({
-            startTime: block.timestamp + 5 days,
+            startTime: block.timestamp + 5 days + 1,
             endTime: block.timestamp + 10 days,
             totalPhaseCap: 150 ether,
             userAllocationCap: 15 ether,
@@ -382,7 +382,7 @@ contract IntegrationForkTest is Test {
         assertEq(presale.getTotalRaised(), 25 ether);
 
         // Warp to phase 1
-        vm.warp(block.timestamp + 2 days);
+        vm.warp(block.timestamp + 2 days + 1);
 
         // Phase 1: Next 5 users deposit with proofs, some make multiple deposits
         for (uint256 i = 5; i < 10; i++) {
@@ -397,7 +397,7 @@ contract IntegrationForkTest is Test {
         assertEq(presale.getTotalRaised(), 75 ether);
 
         // Warp to phase 2
-        vm.warp(block.timestamp + 3 days);
+        vm.warp(block.timestamp + 3 days + 1);
 
         // Phase 2: All users deposit more with empty proof
         for (uint256 i = 0; i < 10; i++) {

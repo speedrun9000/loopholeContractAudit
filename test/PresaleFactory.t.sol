@@ -73,7 +73,7 @@ contract PresaleFactoryTest is Test {
             merkleRoot: bytes32(0)
         });
         phases[1] = IPresale.PresalePhaseConfig({
-            startTime: block.timestamp + 2 days,
+            startTime: block.timestamp + 2 days + 1,
             endTime: block.timestamp + 3 days,
             totalPhaseCap: 200 ether,
             userAllocationCap: 20 ether,
@@ -129,7 +129,7 @@ contract PresaleFactoryTest is Test {
 
         // Verify phase 1 configuration
         IPresale.PresalePhaseConfig memory phase1 = presaleImpl.getPhaseInfo(1);
-        assertEq(phase1.startTime, block.timestamp + 2 days);
+        assertEq(phase1.startTime, block.timestamp + 2 days + 1);
         assertEq(phase1.endTime, block.timestamp + 3 days);
         assertEq(phase1.totalPhaseCap, 200 ether);
         assertEq(phase1.userAllocationCap, 20 ether);
@@ -303,5 +303,50 @@ contract PresaleFactoryTest is Test {
         address beaconAddr = factory.getBeacon();
         assertTrue(beaconAddr != address(0));
         assertEq(beaconAddr, address(beacon));
+    }
+
+    function test_DeployPresale_RevertsOnSharedPhaseBoundary() public {
+        // Two adjacent phases sharing a boundary timestamp would let a depositor
+        // appear in both phases at once and double their per-phase allocation.
+        IPresale.PresalePhaseConfig[] memory phases = new IPresale.PresalePhaseConfig[](2);
+        phases[0] = IPresale.PresalePhaseConfig({
+            startTime: block.timestamp + 1 days,
+            endTime: block.timestamp + 2 days,
+            totalPhaseCap: 100 ether,
+            userAllocationCap: 10 ether,
+            merkleRoot: bytes32(0)
+        });
+        phases[1] = IPresale.PresalePhaseConfig({
+            startTime: block.timestamp + 2 days,
+            endTime: block.timestamp + 3 days,
+            totalPhaseCap: 100 ether,
+            userAllocationCap: 10 ether,
+            merkleRoot: bytes32(0)
+        });
+
+        IPresale.PresaleConfig memory config = IPresale.PresaleConfig({
+            admin: admin,
+            softCap: 50 ether,
+            hardCap: 100 ether,
+            saleType: IPresale.SaleType.Credit,
+            circulatingSupplyBps: 500
+        });
+
+        IPresale.BFactoryParams memory bFactoryParams = IPresale.BFactoryParams({
+            bToken: address(0),
+            initialPoolBTokens: 1000000 ether,
+            creator: admin,
+            creatorFeePct: 100,
+            createHook: false,
+            claimMerkleRoot: bytes32(0),
+            initialCollateral: 0,
+            initialDebt: 0,
+            initialBLV: 0,
+            swapFeePct: 0.01 ether
+        });
+
+        vm.prank(admin);
+        vm.expectRevert(IPresale.InvalidPhaseConfiguration.selector);
+        factory.deployPresale(phases, config, bFactoryParams, address(presaleToken));
     }
 }

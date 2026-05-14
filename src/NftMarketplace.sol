@@ -214,7 +214,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         (
             uint256 wethValue, /* uint256 feesReceived_ */, /* uint256 slippage_ */
         ) = bSwap.quoteSellExactIn({_bToken: bTokenForCollection[nftCollection], _amountIn: _currentOffer});
-        pha.cumulativeWethValuePaid += _currentOffer;
+        pha.cumulativeWethValuePaid += wethValue;
 
         // update the min auction price for the collection
         uint256 updatedMeanAcquisitionPrice = pha.cumulativeWethValuePaid / pha.numPurchases;
@@ -226,7 +226,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         /// sum 95% of the old minimum with 5% of the new mean acquisition, which caps the decrease at 5% of the current value
         } else {
             uint256 newAuctionMin = (existingMinAuctionPrice * 0.95e18 + updatedMeanAcquisitionPrice * 0.05e18) / 1e18;
-            _modifyMinAuctionPrice(nftCollection, updatedMeanAcquisitionPrice);
+            _modifyMinAuctionPrice(nftCollection, newAuctionMin);
         }
 
         emit NftAcquired(nftCollection, msg.sender, tokenId, _currentOffer);

@@ -11,6 +11,12 @@ import {IBSwap} from "../src/interfaces/IBswap.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 contract MockBSwap {
+    uint256 public quoteMultiplier = 1e18;
+
+    function setQuoteMultiplier(uint256 newQuoteMultiplier) external {
+        quoteMultiplier = newQuoteMultiplier;
+    }
+
     function buyTokensExactIn(address, uint256 amountIn, uint256)
         external
         pure
@@ -21,10 +27,10 @@ contract MockBSwap {
 
     function quoteSellExactIn(address, uint256 amountIn)
         external
-        pure
+        view
         returns (uint256 amountOut, uint256 fees, uint256 slippage)
     {
-        return (amountIn, fees, slippage);
+        return (amountIn * quoteMultiplier / 1e18, fees, slippage);
     }
 }
 
@@ -225,8 +231,72 @@ contract NftMarketplaceTests is Test {
     function _sellNftAndGetStartingPrice(uint256 amountFees, uint256 tokenId) internal returns (uint256) {
         mockERC721.mint(address(this), tokenId);
         _test_sellNftToVault(address(this), amountFees, tokenId);
-        uint256 acquisitionPrice = nftMarketplace.minAuctionPrice(address(mockERC721));
-        return acquisitionPrice * 20;
+        return nftMarketplace.nftCost(address(mockERC721));
+    }
+
+    function test_sellNftToVault_UsesWethQuoteForAcquisitionValue() public {
+        uint256 quoteMultiplier = 2e18;
+        mockBSwap.setQuoteMultiplier(quoteMultiplier);
+
+        uint256 amountFees = 1e18;
+        uint256 tokenId = placeholderTokenId;
+        mockERC721.mint(address(this), tokenId);
+        test_fuzz_informOfFeeDistribution(amountFees);
+        vm.warp(block.timestamp + 200);
+
+        uint256 offerPriceBefore = nftMarketplace.offerPrice(address(mockERC721));
+        uint256 expectedWethValue = offerPriceBefore * quoteMultiplier / 1e18;
+
+        mockERC721.setApprovalForAll(address(nftMarketplace), true);
+        nftMarketplace.sellNftToVault(address(mockERC721), tokenId, offerPriceBefore);
+
+        assertEq(
+            nftMarketplace.minAuctionPrice(address(mockERC721)),
+            expectedWethValue,
+            "min auction price should use WETH quote"
+        );
+        assertEq(
+            nftMarketplace.nftCost(address(mockERC721)),
+            expectedWethValue * 20,
+            "auction should start from WETH acquisition value"
+        );
+    }
+
+    function test_fuzz_sellNftToVault_UpdatesMinAuctionPriceFromMeanAcquisitionValue(
+        uint256 initialMinAuctionPrice,
+        uint256 quoteMultiplier
+    ) public {
+        initialMinAuctionPrice = bound(initialMinAuctionPrice, 1, 1e30);
+        quoteMultiplier = bound(quoteMultiplier, 1, 20e18);
+        mockBSwap.setQuoteMultiplier(quoteMultiplier);
+
+        nftMarketplace.modifyMinAuctionPrice(address(mockERC721), initialMinAuctionPrice);
+
+        uint256 amountFees = 1e18;
+        uint256 tokenId = placeholderTokenId;
+        mockERC721.mint(address(this), tokenId);
+        test_fuzz_informOfFeeDistribution(amountFees);
+        vm.warp(block.timestamp + 200);
+
+        uint256 offerPriceBefore = nftMarketplace.offerPrice(address(mockERC721));
+        uint256 updatedMeanAcquisitionPrice = offerPriceBefore * quoteMultiplier / 1e18;
+        uint256 expectedMinAuctionPrice;
+        if (updatedMeanAcquisitionPrice > initialMinAuctionPrice) {
+            expectedMinAuctionPrice = updatedMeanAcquisitionPrice;
+        } else {
+            uint256 stickyMin = (initialMinAuctionPrice * 0.95e18 + updatedMeanAcquisitionPrice * 0.05e18) / 1e18;
+            uint256 startingPrice = updatedMeanAcquisitionPrice * 20;
+            expectedMinAuctionPrice = stickyMin < startingPrice ? stickyMin : startingPrice;
+        }
+
+        mockERC721.setApprovalForAll(address(nftMarketplace), true);
+        nftMarketplace.sellNftToVault(address(mockERC721), tokenId, offerPriceBefore);
+
+        assertEq(
+            nftMarketplace.minAuctionPrice(address(mockERC721)),
+            expectedMinAuctionPrice,
+            "min auction price should follow acquisition mean rule"
+        );
     }
 
     function test_fuzz_sellNftToVault(uint256 amountFees, uint256 tokenId) public {
@@ -467,11 +537,11 @@ contract NftMarketplaceTests is Test {
         nftMarketplace.modifyAuctionDuration(address(mockERC721), oldAuctionDuration);
 
         test_fuzz_sellNftToVault(1e18, placeholderTokenId);
+        uint256 startingPrice = nftMarketplace.nftCost(address(mockERC721));
         vm.warp(block.timestamp + auctionTimeElapsed);
 
         mockERC20.mint(address(nftMarketplace), 1e40);
         mockERC20.mint(address(this), 1e40);
-        uint256 startingPrice = nftMarketplace.minAuctionPrice(address(mockERC721)) * 20;
         minAuctionPriceAfter = bound(minAuctionPriceAfter, 0, startingPrice);
         uint256 nftCostBefore = nftMarketplace.nftCost(address(mockERC721));
         uint256 elapsedTimeBefore = block.timestamp - nftMarketplace.auctionStartTimestamp(address(mockERC721));

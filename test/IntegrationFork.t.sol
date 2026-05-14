@@ -74,7 +74,7 @@ contract IntegrationForkTest is Test {
     uint256 private saltCounter;
 
     function setUp() public {
-        vm.createSelectFork("https://sepolia.base.org", 38018750);
+        vm.createSelectFork("https://sepolia.base.org", 39906627);
 
         mockERC721 = new MockERC721("Test ERC721", "TEST721");
 
@@ -87,8 +87,7 @@ contract IntegrationForkTest is Test {
         // Deploy factory with beacon, bFactory, and admin
         PresaleFactory factoryImpl = new PresaleFactory();
         ERC1967Proxy factoryProxy = new ERC1967Proxy(
-            address(factoryImpl),
-            abi.encodeCall(factoryImpl.initialize, (beacon, bFactory, adminAddress))
+            address(factoryImpl), abi.encodeCall(factoryImpl.initialize, (beacon, bFactory, bController, adminAddress))
         );
         factory = PresaleFactory(address(factoryProxy));
 
@@ -171,7 +170,7 @@ contract IntegrationForkTest is Test {
         nftMarketplaceImplementation = new NftMarketplace();
         bytes memory marketplaceInitializationData = abi.encodeWithSelector(
             NftMarketplace.initialize.selector,
-            loopBToken, // IERC20 _offerToken,
+            reserveToken, // IERC20 _WETH,
             router, // address _feeRouter,
             adminAddress, // address initialOwner,
             baseline, // IBSwap _bSwap,
@@ -357,9 +356,7 @@ contract IntegrationForkTest is Test {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0,
-            initialBLV: 0,
-            swapFeePct: 0.01 ether
+            initialDebt: 0
         });
 
         vm.prank(adminAddress);
@@ -544,9 +541,7 @@ contract IntegrationForkTest is Test {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0,
-            initialBLV: 0,
-            swapFeePct: 0.01 ether
+            initialDebt: 0
         });
 
         vm.prank(adminAddress);
@@ -604,18 +599,37 @@ contract IntegrationForkTest is Test {
             })
         );
 
+        // --- Verify pool is paused: swaps should revert during credit finalization ---
+        address bToken = presale.getCreatedToken();
+        assertTrue(bToken != address(0), "bToken not created");
+
+        address pausedSwapper = address(0xBEEF);
+        uint256 swapAmount = 1 ether;
+        deal(address(presaleToken), pausedSwapper, swapAmount);
+
+        IBSwap bSwap = IBSwap(baseline);
+
+        vm.startPrank(pausedSwapper);
+        presaleToken.approve(baseline, swapAmount);
+        vm.expectRevert();
+        bSwap.buyTokensExactIn(bToken, swapAmount, 0);
+        vm.stopPrank();
+
         // Claim credit positions in a batch
         vm.prank(adminAddress);
         presale.claimCreditBatch(claimUsers, claimCollaterals, claimDebts, claimProofs);
 
-        // Complete finalization
+        // Swaps should still revert before completeFinalization
+        vm.startPrank(pausedSwapper);
+        vm.expectRevert();
+        bSwap.buyTokensExactIn(bToken, swapAmount, 0);
+        vm.stopPrank();
+
+        // Complete finalization (unpauses pool)
         vm.prank(adminAddress);
         presale.completeFinalization();
 
         assertTrue(presale.isFinalized(), "presale not finalized");
-
-        address bToken = presale.getCreatedToken();
-        assertTrue(bToken != address(0), "bToken not created");
 
         // Verify credit positions via IBLens
         IBLens lens = IBLens(baseline);
@@ -625,12 +639,10 @@ contract IntegrationForkTest is Test {
             assertEq(debt, claimDebts[i], "wrong debt for claim user");
         }
 
-        // --- Swap test: buy bTokens from the pool ---
+        // --- Swap test: buy bTokens from the pool (should succeed after unpause) ---
         address swapper = address(0xF00);
         uint256 buyAmount = 1 ether;
         deal(address(presaleToken), swapper, buyAmount);
-
-        IBSwap bSwap = IBSwap(baseline);
 
         // Quote the buy
         (uint256 expectedOut,,) = bSwap.quoteBuyExactIn(bToken, buyAmount);
@@ -714,9 +726,7 @@ contract IntegrationForkTest is Test {
             createHook: false,
             claimMerkleRoot: bytes32(0),
             initialCollateral: 0,
-            initialDebt: 0,
-            initialBLV: 0,
-            swapFeePct: 0.01 ether
+            initialDebt: 0
         });
 
         vm.prank(adminAddress);
@@ -893,15 +903,12 @@ contract IntegrationForkTest is Test {
     function test_fuzz_informOfFeeDistribution(uint256 amountFees) public {
         uint256 offerAtCheckpoint = nftMarketplace.offerPrice(address(mockERC721));
 
-        // modified to use cheatcode instead of minting
-        deal(address(loopBToken), address(nftMarketplace), amountFees);
-        // modified to use loopBToken instead of mockERC20
-        uint256 expectedNewCheckpointBalance = loopBToken.balanceOf(address(nftMarketplace));
+        deal(address(lstBToken), address(nftMarketplace), amountFees);
+        uint256 expectedNewCheckpointBalance = lstBToken.balanceOf(address(nftMarketplace));
         vm.expectEmit(true, true, true, true, address(nftMarketplace));
         emit NftMarketplace.Checkpoint(address(mockERC721), offerAtCheckpoint, expectedNewCheckpointBalance);
         // TODO: actually use router here!
         vm.prank(address(router));
-        // modified to use lstBToken instead of mockERC20
         nftMarketplace.informOfFeeDistribution(address(lstBToken), amountFees);
 
         uint256 checkpointBalanceAfter = nftMarketplace.checkpointBalance(address(mockERC721));
@@ -920,8 +927,7 @@ contract IntegrationForkTest is Test {
         require(mockERC721.ownerOf(tokenId) == seller, "bad test setup");
 
         uint256 minSalePrice = offerPriceBefore - 1e4;
-        // modified to use loopBToken instead of mockERC20
-        uint256 sellerBalanceBefore = loopBToken.balanceOf(seller);
+        uint256 sellerBalanceBefore = lstBToken.balanceOf(seller);
 
         uint256 marketplaceNftsBefore = mockERC721.balanceOf(address(nftMarketplace));
 
@@ -952,9 +958,8 @@ contract IntegrationForkTest is Test {
             nftMarketplace.lastCheckpointTimestamp(address(mockERC721)) == block.timestamp,
             "lastCheckpointTimestamp not set correctly"
         );
-        // modified to use loopBToken instead of mockERC20
         require(
-            loopBToken.balanceOf(seller) == sellerBalanceBefore + offerPriceBefore,
+            lstBToken.balanceOf(seller) == sellerBalanceBefore + offerPriceBefore,
             "tokens not transferred to seller appropriately"
         );
         uint256 checkpointBalanceAfter = nftMarketplace.checkpointBalance(address(mockERC721));
@@ -973,7 +978,7 @@ contract IntegrationForkTest is Test {
     }
 
     function test_fuzz_sellNftToVault(uint256 amountFees, uint256 tokenId) public {
-        vm.assume(amountFees >= 1e4);
+        vm.assume(amountFees >= 1e18);
         vm.assume(amountFees < 1e36);
         address seller = address(this);
         mockERC721.mint(seller, tokenId);
@@ -989,16 +994,13 @@ contract IntegrationForkTest is Test {
     function _test_buyNftFromVault(uint256 tokenId) internal {
         vm.warp(block.timestamp + auctionDuration - 100);
 
-        // modified to use cheatcode instead of minting
-        // modified to use lstBToken instead of mockERC20
-        deal(address(lstBToken), address(nftMarketplace), 1e24);
-        deal(address(lstBToken), address(this), 1e24);
+        deal(address(reserveToken), address(this), 1e24);
         uint256 nftCost = nftMarketplace.nftCost(address(mockERC721));
 
         uint256 maxPrice = nftCost + 1e5;
-        // modified to use lstBToken instead of mockERC20
-        lstBToken.approve(address(nftMarketplace), maxPrice);
-        uint256 purchaserBalanceBefore = lstBToken.balanceOf(address(this));
+        reserveToken.approve(address(nftMarketplace), maxPrice);
+        uint256 purchaserBalanceBefore = reserveToken.balanceOf(address(this));
+        uint256 proceedsBefore = nftMarketplace.nftSalesProceeds(address(mockERC721));
 
         uint256 nftsToSell = mockERC721.balanceOf(address(nftMarketplace));
 
@@ -1022,8 +1024,13 @@ contract IntegrationForkTest is Test {
             );
         }
 
-        // modified to use lstBToken instead of mockERC20
-        require(lstBToken.balanceOf(address(this)) == purchaserBalanceBefore - nftCost, "purchaser paid wrong amount");
+        require(
+            reserveToken.balanceOf(address(this)) == purchaserBalanceBefore - nftCost, "purchaser paid wrong amount"
+        );
+        require(
+            nftMarketplace.nftSalesProceeds(address(mockERC721)) == proceedsBefore + nftCost,
+            "sales proceeds not tracked correctly"
+        );
         require(mockERC721.balanceOf(address(nftMarketplace)) == nftsToSell - 1, "nft not transfered out");
     }
 

@@ -140,7 +140,7 @@ interface IPresale {
     error PresaleAlreadyFinalized();
     error PresaleNotCancelled();
     error PresaleAlreadyCancelled();
-    error SoftCapNotReached();
+    error PresaleNotFinalizable();
     error Unauthorized();
     error NoRefundAvailable();
     error TransferFailed();

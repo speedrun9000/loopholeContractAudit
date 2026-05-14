@@ -154,6 +154,7 @@ contract PresaleSpotClaimTest is Test {
         presale.deposit(0, 100 ether, new bytes32[](0));
 
         // Finalize — verify PresaleFinalized event
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -193,6 +194,7 @@ contract PresaleSpotClaimTest is Test {
         presale.deposit(0, 40 ether, new bytes32[](0));
 
         // Finalize
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -234,6 +236,7 @@ contract PresaleSpotClaimTest is Test {
         presale.deposit(1, 20 ether, new bytes32[](0));
 
         // Finalize
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -262,6 +265,7 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user1);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -287,6 +291,7 @@ contract PresaleSpotClaimTest is Test {
         params.initialCollateral = 500 ether;
         params.initialDebt = 50 ether;
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(params);
 
@@ -409,6 +414,7 @@ contract PresaleSpotClaimTest is Test {
         IPresale.FinalizeParams memory creditParams = _defaultFinalizeParams();
         creditParams.circulatingSupplyRecipient = address(0xBBBB);
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(creditParams);
         vm.prank(admin);
@@ -427,6 +433,7 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user1);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -447,6 +454,7 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user1);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -477,6 +485,7 @@ contract PresaleSpotClaimTest is Test {
         assertEq(presale.getClaimableAmount(user1), 0);
 
         // After finalization: returns non-zero claimable amount
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 
@@ -527,6 +536,7 @@ contract PresaleSpotClaimTest is Test {
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.initialCollateral = initialCollateral;
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(params);
 
@@ -635,6 +645,7 @@ contract PresaleSpotClaimTest is Test {
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.initialCollateral = initialCollateral;
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(params);
         assertTrue(presale.isFinalized());
@@ -779,6 +790,7 @@ contract PresaleSpotClaimTest is Test {
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.initialCollateral = initialCollateral;
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(params);
 
@@ -860,6 +872,7 @@ contract PresaleSpotClaimTest is Test {
         vm.prank(user1);
         presale.deposit(0, 100 ether, new bytes32[](0));
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         presale.finalizeSale(_defaultFinalizeParams());
 

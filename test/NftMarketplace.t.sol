@@ -28,11 +28,12 @@ contract MockBSwap {
         claimAmount = newClaimAmount;
     }
 
-    function buyTokensExactIn(address, uint256 amountIn, uint256)
+    function buyTokensExactIn(address bToken, uint256 amountIn, uint256)
         external
-        pure
         returns (uint256 amountOut, uint256 fees)
     {
+        IERC20(rewardToken).transferFrom(msg.sender, address(this), amountIn);
+        MockERC20(bToken).mint(msg.sender, amountIn);
         return (amountIn, fees);
     }
 
@@ -208,6 +209,25 @@ contract NftMarketplaceTests is Test {
         assertEq(earned, claimAmount, "earned amount");
         assertEq(nftMarketplace.nftSalesProceeds(address(mockERC721)), claimAmount, "sales proceeds");
         assertEq(mockWETH.balanceOf(address(nftMarketplace)), claimAmount, "claimed WETH balance");
+    }
+
+    function test_performSwapUsesWethAndDistributesBTokens() public {
+        uint256 salesProceeds = 4e18;
+        mockBSwap.setClaimAmount(salesProceeds);
+        nftMarketplace.claimStakingRewards(address(mockERC20));
+
+        vm.expectEmit(true, true, true, true, address(nftMarketplace));
+        emit NftMarketplace.SwapPerformed(address(mockERC20), salesProceeds, salesProceeds);
+        nftMarketplace.performSwap(address(mockERC20), salesProceeds, 0);
+
+        assertEq(nftMarketplace.nftSalesProceeds(address(mockERC721)), 0, "sales proceeds");
+        assertEq(mockWETH.balanceOf(address(nftMarketplace)), 0, "marketplace WETH");
+        assertEq(mockWETH.balanceOf(address(mockBSwap)), salesProceeds, "bSwap WETH");
+        assertEq(mockERC20.balanceOf(afterburner), salesProceeds / 2, "afterburner bTokens");
+        assertEq(mockERC20.balanceOf(blvModule), salesProceeds / 2, "BLV bTokens");
+        assertEq(mockWETH.balanceOf(afterburner), 0, "afterburner should not receive WETH");
+        assertEq(mockWETH.balanceOf(blvModule), 0, "BLV should not receive WETH");
+        assertEq(mockERC20.balanceOf(address(nftMarketplace)), 0, "marketplace bTokens");
     }
 
     function test_fuzz_offerPrice(uint256 amountFees, uint256 timeToWarpForward) public {

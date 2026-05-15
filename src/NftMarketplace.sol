@@ -463,7 +463,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         require(bToken != address(WETH), CannotSwapOfferToken());
         address nftCollection = collectionForBToken[bToken];
         nftSalesProceeds[nftCollection] -= tokensIn;
-        IERC20(bToken).approve(address(bSwap), tokensIn);
+        IERC20(WETH).approve(address(bSwap), tokensIn);
         (
             uint256 amountOut, /*uint256 feesReceived_*/
         ) = bSwap.buyTokensExactIn({_bToken: bToken, _amountIn: tokensIn, _limitAmount: minOut});
@@ -472,7 +472,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         BTokenRecipients storage recipients = _recipients[address(bToken)];
         uint256 toAfterburner = (amountOut * feeConfig.bpsToAfterburner) / 10_000;
         uint256 toBLV = (amountOut * feeConfig.bpsToBLV) / 10_000;
-        if (toAfterburner > 0) IERC20(WETH).safeTransfer(recipients.afterburner, toAfterburner);
-        if (toBLV > 0) IERC20(WETH).safeTransfer(recipients.blvModule, toBLV);
+        if (toAfterburner > 0) IERC20(bToken).safeTransfer(recipients.afterburner, toAfterburner);
+        if (toBLV > 0) IERC20(bToken).safeTransfer(recipients.blvModule, toBLV);
     }
 }

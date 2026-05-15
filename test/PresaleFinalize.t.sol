@@ -79,7 +79,10 @@ contract PresaleFinalizeTest is Test {
 
     /// @dev Pre-register the bToken on the router (deploys forwarder) and finalize.
     function _registerAndFinalize(PresaleImplementation presale, IPresale.FinalizeParams memory params) internal {
-        uint256 totalSupply = ((1_000_000 ether + params.initialCollateral) * 10_500) / 10_000;
+        IPresale.BFactoryParams memory bfp = presale.getBFactoryParams();
+        uint16 circulatingBps = presale.circulatingSupplyBps();
+        uint256 totalSupply =
+            ((bfp.initialPoolBTokens + params.initialCollateral) * (10_000 + circulatingBps)) / 10_000;
         address predicted = bFactory.precomputeBTokenAddress(
             params.name, params.symbol, totalSupply, params.salt, address(factory)
         );
@@ -393,8 +396,7 @@ contract PresaleFinalizeTest is Test {
         // Hard cap exactly met, phases still active — early finalize should succeed
         PresaleImplementation presale = _deployAndFundPresale(50 ether, 200 ether, 200 ether);
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         assertTrue(presale.poolCreated());
     }

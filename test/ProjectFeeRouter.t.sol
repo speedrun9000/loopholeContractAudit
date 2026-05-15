@@ -420,7 +420,7 @@ contract ProjectFeeRouterTest is Test {
     function test_SweepCallbackIncludesRemainder() public {
         // 6667/3333 split on 3 ether produces a 1-wei rounding remainder.
         uint256 feeAmount = 3 ether;
-        reserveToken.mint(address(router), feeAmount);
+        _depositAndFlush(lstForwarder, feeAmount);
 
         router.sweep(lstBToken);
 
@@ -466,7 +466,9 @@ contract ProjectFeeRouterTest is Test {
 
         // 7 wei -> royalties=2 (3333*7/10000=2.33), team=4 (6667*7/10000=4.67), remainder=1 -> treasury
         uint256 feeAmount = 7;
-        reserveToken.mint(address(router), feeAmount);
+        address newForwarder = router.forwarderOf(newBToken);
+        reserveToken.mint(newForwarder, feeAmount);
+        BTokenFeeForwarder(newForwarder).flush();
         router.sweep(newBToken);
 
         uint256 expectedRoyalties = (feeAmount * 3333) / 10_000;

@@ -629,33 +629,19 @@ contract IntegrationForkTest is Test {
             })
         );
 
-        // --- Verify pool is paused: swaps should revert during credit finalization ---
+        // Credit sale finalization creates the pool immediately and leaves the presale
+        // in an intermediate state for batched credit claims. Baseline swaps are not
+        // paused by that presale state; completeFinalization only marks the presale done.
         address bToken = presale.createdToken();
         assertTrue(bToken != address(0), "bToken not created");
 
-        address pausedSwapper = address(0xBEEF);
-        uint256 swapAmount = 1 ether;
-        deal(address(presaleToken), pausedSwapper, swapAmount);
-
         IBSwap bSwap = IBSwap(baseline);
-
-        vm.startPrank(pausedSwapper);
-        presaleToken.approve(baseline, swapAmount);
-        vm.expectRevert();
-        bSwap.buyTokensExactIn(bToken, swapAmount, 0);
-        vm.stopPrank();
 
         // Claim credit positions in a batch
         vm.prank(adminAddress);
         presale.claimCreditBatch(claimUsers, claimCollaterals, claimDebts, claimProofs);
 
-        // Swaps should still revert before completeFinalization
-        vm.startPrank(pausedSwapper);
-        vm.expectRevert();
-        bSwap.buyTokensExactIn(bToken, swapAmount, 0);
-        vm.stopPrank();
-
-        // Complete finalization (unpauses pool)
+        // Complete finalization after all batches have been claimed.
         vm.prank(adminAddress);
         presale.completeFinalization();
 

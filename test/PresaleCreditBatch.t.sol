@@ -481,6 +481,7 @@ contract PresaleCreditBatchTest is Test {
         IPresale.FinalizeParams memory params = _defaultFinalizeParams();
         params.circulatingSupplyRecipient = address(0);
 
+        vm.warp(block.timestamp + 8 days);
         vm.prank(admin);
         vm.expectRevert(IPresale.InvalidCirculatingSupplyRecipient.selector);
         presale.finalizeSale(params);
@@ -493,8 +494,7 @@ contract PresaleCreditBatchTest is Test {
     function test_SelfCreditClaim_RevertsDuringGracePeriod() public {
         PresaleImplementation presale = _deployCreditPresale();
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         bytes32[] memory proof = new bytes32[](0);
         vm.prank(address(0xA1));
@@ -505,8 +505,7 @@ contract PresaleCreditBatchTest is Test {
     function test_SelfCreditClaim_SucceedsAfterGracePeriod() public {
         PresaleImplementation presale = _deployCreditPresale();
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
 
         // Warp past the 24h grace window.
         vm.warp(block.timestamp + presale.RESCUE_GRACE_PERIOD());
@@ -531,8 +530,7 @@ contract PresaleCreditBatchTest is Test {
         // the grace period elapses.
         PresaleImplementation presale = _deployCreditPresale();
 
-        vm.prank(admin);
-        presale.finalizeSale(_defaultFinalizeParams());
+        _registerAndFinalize(presale, _defaultFinalizeParams());
         vm.prank(admin);
         presale.completeFinalization();
 

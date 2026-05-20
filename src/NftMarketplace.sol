@@ -71,6 +71,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     error OnlySwapper();
     error CannotSwapOfferToken();
     error CollectionNotRegistered();
+    error SalePriceCannotBeZero();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -196,6 +197,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     /// @dev Will revert if `minPrice > offerPrice(nftCollection)`, ensuring the user receives *at least* `minPrice`
     function sellNftToVault(address nftCollection, uint256 tokenId, uint256 minPrice) external whenNotPaused {
         uint256 _currentOffer = offerPrice(nftCollection);
+        require(_currentOffer != 0, SalePriceCannotBeZero());
         /// taking a minPrice input + reverting here deals with a potential race condition where one user sells this contract an NFT
         /// after another user sends a tx but before the second user's tx lands
         require(minPrice <= _currentOffer, InvalidSalePriceInput());

@@ -424,6 +424,17 @@ contract NftMarketplaceTests is Test {
         _test_sellNftToVault(seller, 1e19, 3);
     }
 
+    function test_sellNftToVault_revert_WhenSalePriceIsZero() public {
+        uint256 tokenId = placeholderTokenId;
+        mockERC721.mint(address(this), tokenId);
+        mockERC721.setApprovalForAll(address(nftMarketplace), true);
+
+        vm.expectRevert(NftMarketplace.SalePriceCannotBeZero.selector);
+        nftMarketplace.sellNftToVault(address(mockERC721), tokenId, 0);
+
+        assertEq(mockERC721.ownerOf(tokenId), address(this), "NFT should remain with seller");
+    }
+
     function _test_sellNftToVault(address seller, uint256 amountFees, uint256 tokenId) internal {
         test_fuzz_informOfFeeDistribution(amountFees);
 

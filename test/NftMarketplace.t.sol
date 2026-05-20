@@ -9,6 +9,7 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBSwap} from "../src/interfaces/IBswap.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 contract MockBSwap {
     uint256 public quoteMultiplier = 1e18;
@@ -78,6 +79,8 @@ contract NftMarketplaceTests is Test {
     address public blvModule = address(3333);
     IBSwap public bSwap;
     address public swapper = address(this);
+    bytes32 internal constant ERC1967_ADMIN_SLOT =
+        0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
 
     function setUp() public {
         mockERC20 = new MockERC20("Test ERC20", "TEST20", 18);
@@ -165,11 +168,21 @@ contract NftMarketplaceTests is Test {
 
     function test_fuzz_informOfFeeDistribution_revert_OnlyFeeRouter(address caller) public {
         vm.assume(caller != feeRouter);
+        address proxyAdmin = address(uint160(uint256(vm.load(address(nftMarketplace), ERC1967_ADMIN_SLOT))));
+        vm.assume(caller != proxyAdmin);
 
         vm.expectRevert(NftMarketplace.OnlyFeeRouter.selector);
 
         vm.prank(caller);
         nftMarketplace.informOfFeeDistribution(address(mockERC20), 0);
+    }
+
+    function test_informOfFeeDistribution_revert_WhenPaused() public {
+        nftMarketplace.pause();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        vm.prank(feeRouter);
+        nftMarketplace.informOfFeeDistribution(address(mockERC20), 1e18);
     }
 
     function test_offerPrice() public {
@@ -196,6 +209,16 @@ contract NftMarketplaceTests is Test {
         assertEq(nftMarketplace.checkpointBalance(address(mockERC721)), amount, "checkpoint balance");
         assertEq(mockERC20.balanceOf(address(nftMarketplace)), 0, "marketplace bToken balance");
         assertEq(mockBSwap.staked(address(mockERC20), address(nftMarketplace)), amount, "staked bToken balance");
+    }
+
+    function test_donate_revert_WhenPaused() public {
+        uint256 amount = 1e18;
+        mockERC20.mint(address(this), amount);
+        mockERC20.approve(address(nftMarketplace), amount);
+        nftMarketplace.pause();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        nftMarketplace.donate(address(mockERC20), amount);
     }
 
     function test_claimStakingRewardsIncreasesSalesProceeds() public {

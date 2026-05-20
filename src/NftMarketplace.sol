@@ -415,7 +415,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     }
 
     /// @notice Called by the `feeRouter` to inform this contract of a fee distribution being performed for the `bToken`, of `amountFees` of the `bToken`
-    function informOfFeeDistribution(address bToken, uint256 amountFees) external {
+    function informOfFeeDistribution(address bToken, uint256 amountFees) external whenNotPaused {
         require(msg.sender == feeRouter, OnlyFeeRouter());
         address nftCollection = collectionForBToken[bToken];
         require(nftCollection != address(0), NftCollectionNotSetForBToken());
@@ -425,7 +425,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
     }
 
     /// @notice Permissionless function, allowing the caller to donate `amount` of `bToken`, to be treated like fees for the `bToken`
-    function donate(address bToken, uint256 amount) external {
+    function donate(address bToken, uint256 amount) external whenNotPaused {
         address nftCollection = collectionForBToken[bToken];
         require(nftCollection != address(0), NftCollectionNotSetForBToken());
 

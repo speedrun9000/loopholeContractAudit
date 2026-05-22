@@ -79,8 +79,7 @@ contract NftMarketplaceTests is Test {
     address public blvModule = address(3333);
     IBSwap public bSwap;
     address public swapper = address(this);
-    bytes32 internal constant ERC1967_ADMIN_SLOT =
-        0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
+    bytes32 internal constant ERC1967_ADMIN_SLOT = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
 
     function setUp() public {
         mockERC20 = new MockERC20("Test ERC20", "TEST20", 18);
@@ -389,9 +388,7 @@ contract NftMarketplaceTests is Test {
         if (updatedMeanAcquisitionPrice > initialMinAuctionPrice) {
             expectedMinAuctionPrice = updatedMeanAcquisitionPrice;
         } else {
-            uint256 stickyMin = (initialMinAuctionPrice * 0.95e18 + updatedMeanAcquisitionPrice * 0.05e18) / 1e18;
-            uint256 startingPrice = updatedMeanAcquisitionPrice * 20;
-            expectedMinAuctionPrice = stickyMin < startingPrice ? stickyMin : startingPrice;
+            expectedMinAuctionPrice = (initialMinAuctionPrice * 0.95e18 + updatedMeanAcquisitionPrice * 0.05e18) / 1e18;
         }
 
         mockERC721.setApprovalForAll(address(nftMarketplace), true);
@@ -401,6 +398,35 @@ contract NftMarketplaceTests is Test {
             nftMarketplace.minAuctionPrice(address(mockERC721)),
             expectedMinAuctionPrice,
             "min auction price should follow acquisition mean rule"
+        );
+    }
+
+    function test_sellNftToVault_StartsAuctionFromMinAuctionPriceFloorWhenHigherThanAcquisitionMean() public {
+        uint256 initialMinAuctionPrice = 100e18;
+        nftMarketplace.modifyMinAuctionPrice(address(mockERC721), initialMinAuctionPrice);
+
+        uint256 amountFees = 1e18;
+        uint256 tokenId = placeholderTokenId;
+        mockERC721.mint(address(this), tokenId);
+        test_fuzz_informOfFeeDistribution(amountFees);
+        vm.warp(block.timestamp + 200);
+
+        uint256 offerPriceBefore = nftMarketplace.offerPrice(address(mockERC721));
+        uint256 acquisitionMean = offerPriceBefore;
+        uint256 expectedMinAuctionPrice = (initialMinAuctionPrice * 0.95e18 + acquisitionMean * 0.05e18) / 1e18;
+
+        mockERC721.setApprovalForAll(address(nftMarketplace), true);
+        nftMarketplace.sellNftToVault(address(mockERC721), tokenId, offerPriceBefore);
+
+        assertEq(
+            nftMarketplace.minAuctionPrice(address(mockERC721)),
+            expectedMinAuctionPrice,
+            "min auction price should follow sticky decrease"
+        );
+        assertEq(
+            nftMarketplace.nftCost(address(mockERC721)),
+            expectedMinAuctionPrice * 20,
+            "auction should start from min auction price floor"
         );
     }
 
@@ -659,13 +685,16 @@ contract NftMarketplaceTests is Test {
         nftMarketplace.modifyAuctionDuration(address(mockERC721), oldAuctionDuration);
 
         test_fuzz_sellNftToVault(1e18, placeholderTokenId);
-        uint256 startingPrice = nftMarketplace.nftCost(address(mockERC721));
+        uint256 auctionStartingPrice = nftMarketplace.nftCost(address(mockERC721));
         vm.warp(block.timestamp + auctionTimeElapsed);
 
         mockERC20.mint(address(nftMarketplace), 1e40);
         mockERC20.mint(address(this), 1e40);
-        minAuctionPriceAfter = bound(minAuctionPriceAfter, 0, startingPrice);
         uint256 nftCostBefore = nftMarketplace.nftCost(address(mockERC721));
+        uint256 observedMeanAcquisitionPrice = nftMarketplace.maxOfferIncreaseRate(address(mockERC721)) * 200;
+        uint256 minPriceNeededToSupportCurrentPrice =
+            observedMeanAcquisitionPrice * 20 >= nftCostBefore ? 0 : (nftCostBefore + 19) / 20;
+        minAuctionPriceAfter = bound(minAuctionPriceAfter, minPriceNeededToSupportCurrentPrice, auctionStartingPrice);
         uint256 elapsedTimeBefore = block.timestamp - nftMarketplace.auctionStartTimestamp(address(mockERC721));
 
         vm.expectEmit(true, true, true, true, address(nftMarketplace));

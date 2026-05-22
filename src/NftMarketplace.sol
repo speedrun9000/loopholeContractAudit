@@ -185,9 +185,10 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         }
     }
 
+    /// @dev Returns 20x the maximum of (observed mean price, current min price)
     function _startingPrice(address nftCollection) internal view returns (uint256) {
         PurchaseHistoryAggregators storage pha = _purchaseHistoryAggregators[nftCollection];
-        return (pha.cumulativeWethValuePaid * 20) / pha.numPurchases;
+        return 20 * Math.max(pha.cumulativeWethValuePaid / pha.numPurchases, minAuctionPrice[nftCollection]);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -233,7 +234,7 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         } else {
             uint256 newAuctionMin = (existingMinAuctionPrice * 0.95e18 + updatedMeanAcquisitionPrice * 0.05e18) / 1e18;
             // use Math.min to address the edge case where newAuctionMin would be less than the startingPrice
-            _modifyMinAuctionPrice(nftCollection, Math.min(newAuctionMin, _startingPrice(nftCollection)));
+            _modifyMinAuctionPrice(nftCollection, newAuctionMin);
         }
 
         emit NftAcquired(nftCollection, msg.sender, tokenId, _currentOffer);
@@ -370,18 +371,17 @@ contract NftMarketplace is OwnableUpgradeable, PausableUpgradeable {
         if (_minAuctionPrice < previousMinPrice) {
             uint256 _auctionStartTimestamp = auctionStartTimestamp[nftCollection];
             if (_auctionStartTimestamp != 0) {
-                uint256 elapsedTime = block.timestamp - _auctionStartTimestamp;
-                // cap elapsed time at duration
-                uint256 _duration = auctionDuration[nftCollection];
-                if (elapsedTime > _duration) {
-                    elapsedTime = _duration;
-                }
                 // calculate the appropriate elapsed time for the same current price
-                uint256 startingPrice = _startingPrice(nftCollection);
-                // should be less time because price now falls faster -- divide by larger number, multiply by smaller number
-                uint256 adjustedElapsedTime =
-                    elapsedTime * (startingPrice - previousMinPrice) / (startingPrice - _minAuctionPrice);
-                // calculate at set the modified 'start time' of the auction, so the new elapsed time is correctly reflected in the `nftCost` calculation
+                uint256 currentPrice = nftCost(nftCollection);
+                PurchaseHistoryAggregators storage pha = _purchaseHistoryAggregators[nftCollection];
+                // emulate the behavior of the `startingPrice()` function but using the new `_minAuctionPrice` instead of the current one
+                uint256 newStartingPrice =
+                    20 * Math.max(pha.cumulativeWethValuePaid / pha.numPurchases, _minAuctionPrice);
+                uint256 adjustedElapsedTime = newStartingPrice > currentPrice
+                    ? (newStartingPrice - currentPrice) * auctionDuration[nftCollection]
+                        / (newStartingPrice - _minAuctionPrice)
+                    : 0;
+                // calculate and set the modified 'start time' of the auction, so the new elapsed time is correctly reflected in the `nftCost` calculation
                 auctionStartTimestamp[nftCollection] = (block.timestamp - adjustedElapsedTime);
             }
         }

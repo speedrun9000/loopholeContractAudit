@@ -430,6 +430,33 @@ contract NftMarketplaceTests is Test {
         );
     }
 
+    function test_sellNftToVault_SecondSaleSucceedsAfterAdminRaisesMinAboveTwentyTimesMean() public {
+        uint256 firstTokenId = 1;
+        uint256 secondTokenId = 2;
+        mockERC721.mint(address(this), firstTokenId);
+        mockERC721.mint(address(this), secondTokenId);
+
+        test_fuzz_informOfFeeDistribution(1e18);
+        vm.warp(block.timestamp + 200);
+
+        uint256 firstOffer = nftMarketplace.offerPrice(address(mockERC721));
+        mockERC721.setApprovalForAll(address(nftMarketplace), true);
+        nftMarketplace.sellNftToVault(address(mockERC721), firstTokenId, firstOffer);
+
+        uint256 raisedMinAuctionPrice = firstOffer * 21;
+        assertGt(raisedMinAuctionPrice, firstOffer * 20, "test setup: min should exceed 20x mean");
+        nftMarketplace.modifyMinAuctionPrice(address(mockERC721), raisedMinAuctionPrice);
+
+        uint256 secondOffer = nftMarketplace.offerPrice(address(mockERC721));
+        assertGt(secondOffer, 0, "test setup: second sale should have nonzero offer");
+        uint256 sellerBalanceBefore = mockERC20.balanceOf(address(this));
+
+        nftMarketplace.sellNftToVault(address(mockERC721), secondTokenId, secondOffer);
+
+        assertEq(mockERC721.ownerOf(secondTokenId), address(nftMarketplace), "second NFT should transfer");
+        assertEq(mockERC20.balanceOf(address(this)), sellerBalanceBefore + secondOffer, "seller should be paid");
+    }
+
     function test_fuzz_sellNftToVault(uint256 amountFees, uint256 tokenId) public {
         vm.assume(amountFees >= 1e4);
         vm.assume(amountFees < 1e36);

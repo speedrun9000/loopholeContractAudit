@@ -457,6 +457,76 @@ contract NftMarketplaceTests is Test {
         assertEq(mockERC20.balanceOf(address(this)), sellerBalanceBefore + secondOffer, "seller should be paid");
     }
 
+    function test_sellNftToVault_SecondSaleSucceedsAfterHighInitialMinDropsMeanAndStartingPrice() public {
+        MockERC20 highMinBToken = new MockERC20("High Min BToken", "HMB", 18);
+        MockERC721 highMinCollection = new MockERC721("High Min Collection", "HMC");
+        uint256 initialHighMinAuctionPrice = 100e18;
+        uint256 maxOfferIncreaseRate = 1e15;
+
+        NftMarketplace.BTokenFeeConfig memory feeConfig =
+            NftMarketplace.BTokenFeeConfig({bpsToAfterburner: 5000, bpsToBLV: 5000});
+        NftMarketplace.BTokenRecipients memory recipients =
+            NftMarketplace.BTokenRecipients({afterburner: afterburner, blvModule: blvModule});
+        nftMarketplace.setCollectionForBToken({
+            bToken: address(highMinBToken),
+            nftCollection: address(highMinCollection),
+            _auctionDuration: auctionDuration,
+            _maxOfferIncreaseRate: maxOfferIncreaseRate,
+            _minAuctionPrice: initialHighMinAuctionPrice,
+            feeConfig: feeConfig,
+            recipients: recipients
+        });
+        assertEq(
+            nftMarketplace.minAuctionPrice(address(highMinCollection)),
+            initialHighMinAuctionPrice,
+            "high min should be registered"
+        );
+
+        uint256 firstTokenId = 1;
+        uint256 secondTokenId = 2;
+        highMinCollection.mint(address(this), firstTokenId);
+        highMinCollection.mint(address(this), secondTokenId);
+        highMinCollection.setApprovalForAll(address(nftMarketplace), true);
+
+        highMinBToken.mint(address(nftMarketplace), 10e18);
+        vm.prank(feeRouter);
+        nftMarketplace.informOfFeeDistribution(address(highMinBToken), 10e18);
+        vm.warp(block.timestamp + 200);
+
+        uint256 firstOffer = nftMarketplace.offerPrice(address(highMinCollection));
+        nftMarketplace.sellNftToVault(address(highMinCollection), firstTokenId, firstOffer);
+
+        uint256 minAfterFirstSale = nftMarketplace.minAuctionPrice(address(highMinCollection));
+        uint256 meanAfterFirstSale = firstOffer;
+        uint256 startingPriceAfterFirstSale = nftMarketplace.nftCost(address(highMinCollection));
+        assertLt(minAfterFirstSale, initialHighMinAuctionPrice, "first sale should lower high min");
+        assertEq(
+            startingPriceAfterFirstSale,
+            minAfterFirstSale * 20,
+            "high min floor should set first starting price"
+        );
+
+        uint256 secondOffer = nftMarketplace.offerPrice(address(highMinCollection));
+        assertLt(secondOffer, firstOffer, "test setup: second offer should be smaller");
+        uint256 meanAfterSecondSale = (firstOffer + secondOffer) / 2;
+        assertLt(meanAfterSecondSale, meanAfterFirstSale, "smaller second offer should drop mean");
+        uint256 sellerBalanceBefore = highMinBToken.balanceOf(address(this));
+
+        nftMarketplace.sellNftToVault(address(highMinCollection), secondTokenId, secondOffer);
+
+        uint256 minAfterSecondSale = nftMarketplace.minAuctionPrice(address(highMinCollection));
+        uint256 startingPriceAfterSecondSale = nftMarketplace.nftCost(address(highMinCollection));
+        assertLt(minAfterSecondSale, minAfterFirstSale, "second sale should further lower sticky min");
+        assertEq(
+            startingPriceAfterSecondSale,
+            minAfterSecondSale * 20,
+            "high min floor should set second starting price"
+        );
+        assertLt(startingPriceAfterSecondSale, startingPriceAfterFirstSale, "subsequent starting price should drop");
+        assertEq(highMinCollection.ownerOf(secondTokenId), address(nftMarketplace), "second NFT should transfer");
+        assertEq(highMinBToken.balanceOf(address(this)), sellerBalanceBefore + secondOffer, "seller should be paid");
+    }
+
     function test_fuzz_sellNftToVault(uint256 amountFees, uint256 tokenId) public {
         vm.assume(amountFees >= 1e4);
         vm.assume(amountFees < 1e36);

@@ -9,6 +9,7 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IBSwap} from "../src/interfaces/IBswap.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 contract MockBSwap {
     uint256 public quoteMultiplier = 1e18;
@@ -28,11 +29,12 @@ contract MockBSwap {
         claimAmount = newClaimAmount;
     }
 
-    function buyTokensExactIn(address, uint256 amountIn, uint256)
+    function buyTokensExactIn(address bToken, uint256 amountIn, uint256)
         external
-        pure
         returns (uint256 amountOut, uint256 fees)
     {
+        IERC20(rewardToken).transferFrom(msg.sender, address(this), amountIn);
+        MockERC20(bToken).mint(msg.sender, amountIn);
         return (amountIn, fees);
     }
 
@@ -77,6 +79,7 @@ contract NftMarketplaceTests is Test {
     address public blvModule = address(3333);
     IBSwap public bSwap;
     address public swapper = address(this);
+    bytes32 internal constant ERC1967_ADMIN_SLOT = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
 
     function setUp() public {
         mockERC20 = new MockERC20("Test ERC20", "TEST20", 18);
@@ -164,11 +167,21 @@ contract NftMarketplaceTests is Test {
 
     function test_fuzz_informOfFeeDistribution_revert_OnlyFeeRouter(address caller) public {
         vm.assume(caller != feeRouter);
+        address proxyAdmin = address(uint160(uint256(vm.load(address(nftMarketplace), ERC1967_ADMIN_SLOT))));
+        vm.assume(caller != proxyAdmin);
 
         vm.expectRevert(NftMarketplace.OnlyFeeRouter.selector);
 
         vm.prank(caller);
         nftMarketplace.informOfFeeDistribution(address(mockERC20), 0);
+    }
+
+    function test_informOfFeeDistribution_revert_WhenPaused() public {
+        nftMarketplace.pause();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        vm.prank(feeRouter);
+        nftMarketplace.informOfFeeDistribution(address(mockERC20), 1e18);
     }
 
     function test_offerPrice() public {
@@ -197,6 +210,16 @@ contract NftMarketplaceTests is Test {
         assertEq(mockBSwap.staked(address(mockERC20), address(nftMarketplace)), amount, "staked bToken balance");
     }
 
+    function test_donate_revert_WhenPaused() public {
+        uint256 amount = 1e18;
+        mockERC20.mint(address(this), amount);
+        mockERC20.approve(address(nftMarketplace), amount);
+        nftMarketplace.pause();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        nftMarketplace.donate(address(mockERC20), amount);
+    }
+
     function test_claimStakingRewardsIncreasesSalesProceeds() public {
         uint256 claimAmount = 3e18;
         mockBSwap.setClaimAmount(claimAmount);
@@ -208,6 +231,25 @@ contract NftMarketplaceTests is Test {
         assertEq(earned, claimAmount, "earned amount");
         assertEq(nftMarketplace.nftSalesProceeds(address(mockERC721)), claimAmount, "sales proceeds");
         assertEq(mockWETH.balanceOf(address(nftMarketplace)), claimAmount, "claimed WETH balance");
+    }
+
+    function test_performSwapUsesWethAndDistributesBTokens() public {
+        uint256 salesProceeds = 4e18;
+        mockBSwap.setClaimAmount(salesProceeds);
+        nftMarketplace.claimStakingRewards(address(mockERC20));
+
+        vm.expectEmit(true, true, true, true, address(nftMarketplace));
+        emit NftMarketplace.SwapPerformed(address(mockERC20), salesProceeds, salesProceeds);
+        nftMarketplace.performSwap(address(mockERC20), salesProceeds, 0);
+
+        assertEq(nftMarketplace.nftSalesProceeds(address(mockERC721)), 0, "sales proceeds");
+        assertEq(mockWETH.balanceOf(address(nftMarketplace)), 0, "marketplace WETH");
+        assertEq(mockWETH.balanceOf(address(mockBSwap)), salesProceeds, "bSwap WETH");
+        assertEq(mockERC20.balanceOf(afterburner), salesProceeds / 2, "afterburner bTokens");
+        assertEq(mockERC20.balanceOf(blvModule), salesProceeds / 2, "BLV bTokens");
+        assertEq(mockWETH.balanceOf(afterburner), 0, "afterburner should not receive WETH");
+        assertEq(mockWETH.balanceOf(blvModule), 0, "BLV should not receive WETH");
+        assertEq(mockERC20.balanceOf(address(nftMarketplace)), 0, "marketplace bTokens");
     }
 
     function test_fuzz_offerPrice(uint256 amountFees, uint256 timeToWarpForward) public {
@@ -346,9 +388,7 @@ contract NftMarketplaceTests is Test {
         if (updatedMeanAcquisitionPrice > initialMinAuctionPrice) {
             expectedMinAuctionPrice = updatedMeanAcquisitionPrice;
         } else {
-            uint256 stickyMin = (initialMinAuctionPrice * 0.95e18 + updatedMeanAcquisitionPrice * 0.05e18) / 1e18;
-            uint256 startingPrice = updatedMeanAcquisitionPrice * 20;
-            expectedMinAuctionPrice = stickyMin < startingPrice ? stickyMin : startingPrice;
+            expectedMinAuctionPrice = (initialMinAuctionPrice * 0.95e18 + updatedMeanAcquisitionPrice * 0.05e18) / 1e18;
         }
 
         mockERC721.setApprovalForAll(address(nftMarketplace), true);
@@ -359,6 +399,132 @@ contract NftMarketplaceTests is Test {
             expectedMinAuctionPrice,
             "min auction price should follow acquisition mean rule"
         );
+    }
+
+    function test_sellNftToVault_StartsAuctionFromMinAuctionPriceFloorWhenHigherThanAcquisitionMean() public {
+        uint256 initialMinAuctionPrice = 100e18;
+        nftMarketplace.modifyMinAuctionPrice(address(mockERC721), initialMinAuctionPrice);
+
+        uint256 amountFees = 1e18;
+        uint256 tokenId = placeholderTokenId;
+        mockERC721.mint(address(this), tokenId);
+        test_fuzz_informOfFeeDistribution(amountFees);
+        vm.warp(block.timestamp + 200);
+
+        uint256 offerPriceBefore = nftMarketplace.offerPrice(address(mockERC721));
+        uint256 acquisitionMean = offerPriceBefore;
+        uint256 expectedMinAuctionPrice = (initialMinAuctionPrice * 0.95e18 + acquisitionMean * 0.05e18) / 1e18;
+
+        mockERC721.setApprovalForAll(address(nftMarketplace), true);
+        nftMarketplace.sellNftToVault(address(mockERC721), tokenId, offerPriceBefore);
+
+        assertEq(
+            nftMarketplace.minAuctionPrice(address(mockERC721)),
+            expectedMinAuctionPrice,
+            "min auction price should follow sticky decrease"
+        );
+        assertEq(
+            nftMarketplace.nftCost(address(mockERC721)),
+            expectedMinAuctionPrice * 20,
+            "auction should start from min auction price floor"
+        );
+    }
+
+    function test_sellNftToVault_SecondSaleSucceedsAfterAdminRaisesMinAboveTwentyTimesMean() public {
+        uint256 firstTokenId = 1;
+        uint256 secondTokenId = 2;
+        mockERC721.mint(address(this), firstTokenId);
+        mockERC721.mint(address(this), secondTokenId);
+
+        test_fuzz_informOfFeeDistribution(1e18);
+        vm.warp(block.timestamp + 200);
+
+        uint256 firstOffer = nftMarketplace.offerPrice(address(mockERC721));
+        mockERC721.setApprovalForAll(address(nftMarketplace), true);
+        nftMarketplace.sellNftToVault(address(mockERC721), firstTokenId, firstOffer);
+
+        uint256 raisedMinAuctionPrice = firstOffer * 21;
+        assertGt(raisedMinAuctionPrice, firstOffer * 20, "test setup: min should exceed 20x mean");
+        nftMarketplace.modifyMinAuctionPrice(address(mockERC721), raisedMinAuctionPrice);
+
+        uint256 secondOffer = nftMarketplace.offerPrice(address(mockERC721));
+        assertGt(secondOffer, 0, "test setup: second sale should have nonzero offer");
+        uint256 sellerBalanceBefore = mockERC20.balanceOf(address(this));
+
+        nftMarketplace.sellNftToVault(address(mockERC721), secondTokenId, secondOffer);
+
+        assertEq(mockERC721.ownerOf(secondTokenId), address(nftMarketplace), "second NFT should transfer");
+        assertEq(mockERC20.balanceOf(address(this)), sellerBalanceBefore + secondOffer, "seller should be paid");
+    }
+
+    function test_sellNftToVault_SecondSaleSucceedsAfterHighInitialMinDropsMeanAndStartingPrice() public {
+        MockERC20 highMinBToken = new MockERC20("High Min BToken", "HMB", 18);
+        MockERC721 highMinCollection = new MockERC721("High Min Collection", "HMC");
+        uint256 initialHighMinAuctionPrice = 100e18;
+        uint256 maxOfferIncreaseRate = 1e15;
+
+        NftMarketplace.BTokenFeeConfig memory feeConfig =
+            NftMarketplace.BTokenFeeConfig({bpsToAfterburner: 5000, bpsToBLV: 5000});
+        NftMarketplace.BTokenRecipients memory recipients =
+            NftMarketplace.BTokenRecipients({afterburner: afterburner, blvModule: blvModule});
+        nftMarketplace.setCollectionForBToken({
+            bToken: address(highMinBToken),
+            nftCollection: address(highMinCollection),
+            _auctionDuration: auctionDuration,
+            _maxOfferIncreaseRate: maxOfferIncreaseRate,
+            _minAuctionPrice: initialHighMinAuctionPrice,
+            feeConfig: feeConfig,
+            recipients: recipients
+        });
+        assertEq(
+            nftMarketplace.minAuctionPrice(address(highMinCollection)),
+            initialHighMinAuctionPrice,
+            "high min should be registered"
+        );
+
+        uint256 firstTokenId = 1;
+        uint256 secondTokenId = 2;
+        highMinCollection.mint(address(this), firstTokenId);
+        highMinCollection.mint(address(this), secondTokenId);
+        highMinCollection.setApprovalForAll(address(nftMarketplace), true);
+
+        highMinBToken.mint(address(nftMarketplace), 10e18);
+        vm.prank(feeRouter);
+        nftMarketplace.informOfFeeDistribution(address(highMinBToken), 10e18);
+        vm.warp(block.timestamp + 200);
+
+        uint256 firstOffer = nftMarketplace.offerPrice(address(highMinCollection));
+        nftMarketplace.sellNftToVault(address(highMinCollection), firstTokenId, firstOffer);
+
+        uint256 minAfterFirstSale = nftMarketplace.minAuctionPrice(address(highMinCollection));
+        uint256 meanAfterFirstSale = firstOffer;
+        uint256 startingPriceAfterFirstSale = nftMarketplace.nftCost(address(highMinCollection));
+        assertLt(minAfterFirstSale, initialHighMinAuctionPrice, "first sale should lower high min");
+        assertEq(
+            startingPriceAfterFirstSale,
+            minAfterFirstSale * 20,
+            "high min floor should set first starting price"
+        );
+
+        uint256 secondOffer = nftMarketplace.offerPrice(address(highMinCollection));
+        assertLt(secondOffer, firstOffer, "test setup: second offer should be smaller");
+        uint256 meanAfterSecondSale = (firstOffer + secondOffer) / 2;
+        assertLt(meanAfterSecondSale, meanAfterFirstSale, "smaller second offer should drop mean");
+        uint256 sellerBalanceBefore = highMinBToken.balanceOf(address(this));
+
+        nftMarketplace.sellNftToVault(address(highMinCollection), secondTokenId, secondOffer);
+
+        uint256 minAfterSecondSale = nftMarketplace.minAuctionPrice(address(highMinCollection));
+        uint256 startingPriceAfterSecondSale = nftMarketplace.nftCost(address(highMinCollection));
+        assertLt(minAfterSecondSale, minAfterFirstSale, "second sale should further lower sticky min");
+        assertEq(
+            startingPriceAfterSecondSale,
+            minAfterSecondSale * 20,
+            "high min floor should set second starting price"
+        );
+        assertLt(startingPriceAfterSecondSale, startingPriceAfterFirstSale, "subsequent starting price should drop");
+        assertEq(highMinCollection.ownerOf(secondTokenId), address(nftMarketplace), "second NFT should transfer");
+        assertEq(highMinBToken.balanceOf(address(this)), sellerBalanceBefore + secondOffer, "seller should be paid");
     }
 
     function test_fuzz_sellNftToVault(uint256 amountFees, uint256 tokenId) public {
@@ -379,6 +545,17 @@ contract NftMarketplaceTests is Test {
         _test_sellNftToVault(seller, 1e18, 1);
         _test_sellNftToVault(seller, 1e20, 2);
         _test_sellNftToVault(seller, 1e19, 3);
+    }
+
+    function test_sellNftToVault_revert_WhenSalePriceIsZero() public {
+        uint256 tokenId = placeholderTokenId;
+        mockERC721.mint(address(this), tokenId);
+        mockERC721.setApprovalForAll(address(nftMarketplace), true);
+
+        vm.expectRevert(NftMarketplace.SalePriceCannotBeZero.selector);
+        nftMarketplace.sellNftToVault(address(mockERC721), tokenId, 0);
+
+        assertEq(mockERC721.ownerOf(tokenId), address(this), "NFT should remain with seller");
     }
 
     function _test_sellNftToVault(address seller, uint256 amountFees, uint256 tokenId) internal {
@@ -605,13 +782,16 @@ contract NftMarketplaceTests is Test {
         nftMarketplace.modifyAuctionDuration(address(mockERC721), oldAuctionDuration);
 
         test_fuzz_sellNftToVault(1e18, placeholderTokenId);
-        uint256 startingPrice = nftMarketplace.nftCost(address(mockERC721));
+        uint256 auctionStartingPrice = nftMarketplace.nftCost(address(mockERC721));
         vm.warp(block.timestamp + auctionTimeElapsed);
 
         mockERC20.mint(address(nftMarketplace), 1e40);
         mockERC20.mint(address(this), 1e40);
-        minAuctionPriceAfter = bound(minAuctionPriceAfter, 0, startingPrice);
         uint256 nftCostBefore = nftMarketplace.nftCost(address(mockERC721));
+        uint256 observedMeanAcquisitionPrice = nftMarketplace.maxOfferIncreaseRate(address(mockERC721)) * 200;
+        uint256 minPriceNeededToSupportCurrentPrice =
+            observedMeanAcquisitionPrice * 20 >= nftCostBefore ? 0 : (nftCostBefore + 19) / 20;
+        minAuctionPriceAfter = bound(minAuctionPriceAfter, minPriceNeededToSupportCurrentPrice, auctionStartingPrice);
         uint256 elapsedTimeBefore = block.timestamp - nftMarketplace.auctionStartTimestamp(address(mockERC721));
 
         vm.expectEmit(true, true, true, true, address(nftMarketplace));

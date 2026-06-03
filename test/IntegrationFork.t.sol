@@ -1022,6 +1022,80 @@ contract IntegrationForkTest is Test {
         _test_buyNftFromVault(placeholderTokenId);
     }
 
+    function test_performSwapSwapsNftSalesProceedsToBTokenRecipients() public {
+        MockERC721 loopCollection = new MockERC721("Loop Test ERC721", "LOOP721");
+        uint256 tokenId = 999;
+        uint256 amountFees = 1e18;
+
+        NftMarketplace.BTokenFeeConfig memory feeConfig =
+            NftMarketplace.BTokenFeeConfig({bpsToAfterburner: 7000, bpsToBLV: 3000});
+        NftMarketplace.BTokenRecipients memory recipients =
+            NftMarketplace.BTokenRecipients({afterburner: address(afterburner), blvModule: blvModule});
+
+        vm.prank(adminAddress);
+        nftMarketplace.setCollectionForBToken({
+            bToken: address(loopBToken),
+            nftCollection: address(loopCollection),
+            _auctionDuration: auctionDuration,
+            _maxOfferIncreaseRate: 1e15,
+            _minAuctionPrice: 1e12,
+            feeConfig: feeConfig,
+            recipients: recipients
+        });
+
+        deal(address(loopBToken), address(nftMarketplace), amountFees);
+        vm.prank(address(router));
+        nftMarketplace.informOfFeeDistribution(address(loopBToken), amountFees);
+
+        loopCollection.mint(address(this), tokenId);
+        vm.warp(block.timestamp + 200);
+        uint256 offerPriceBefore = nftMarketplace.offerPrice(address(loopCollection));
+        loopCollection.setApprovalForAll(address(nftMarketplace), true);
+        nftMarketplace.sellNftToVault(address(loopCollection), tokenId, offerPriceBefore - 1e4);
+
+        vm.warp(block.timestamp + auctionDuration - 100);
+        uint256 nftCost = nftMarketplace.nftCost(address(loopCollection));
+        deal(address(reserveToken), address(this), nftCost + 1e5);
+        reserveToken.approve(address(nftMarketplace), nftCost + 1e5);
+        nftMarketplace.buyNftFromVault(address(loopCollection), tokenId, nftCost + 1e5);
+
+        uint256 proceeds = nftMarketplace.nftSalesProceeds(address(loopCollection));
+        assertGt(proceeds, 0, "test setup: expected NFT sale proceeds");
+        assertEq(reserveToken.balanceOf(address(nftMarketplace)), proceeds, "marketplace WETH proceeds");
+
+        (uint256 expectedOut,,) = IBSwap(baseline).quoteBuyExactIn(address(loopBToken), proceeds);
+        assertGt(expectedOut, 0, "expected nonzero LOOP output");
+
+        uint256 afterburnerBefore = loopBToken.balanceOf(address(afterburner));
+        uint256 blvBefore = loopBToken.balanceOf(blvModule);
+        uint256 marketplaceBTokenBefore = loopBToken.balanceOf(address(nftMarketplace));
+
+        uint256 expectedAfterburner = (expectedOut * 7000) / 10_000;
+        uint256 expectedBLV = (expectedOut * 3000) / 10_000;
+        uint256 expectedRemainder = expectedOut - expectedAfterburner - expectedBLV;
+
+        vm.expectEmit(true, true, true, true, address(nftMarketplace));
+        emit NftMarketplace.SwapPerformed(address(loopBToken), proceeds, expectedOut);
+        vm.prank(adminAddress);
+        nftMarketplace.performSwap(address(loopBToken), proceeds, 1);
+
+        assertEq(nftMarketplace.nftSalesProceeds(address(loopCollection)), 0, "sales proceeds should be spent");
+        assertEq(reserveToken.balanceOf(address(nftMarketplace)), 0, "marketplace WETH should be spent");
+        assertEq(
+            loopBToken.balanceOf(address(afterburner)) - afterburnerBefore,
+            expectedAfterburner,
+            "afterburner LOOP"
+        );
+        assertEq(loopBToken.balanceOf(blvModule) - blvBefore, expectedBLV, "BLV LOOP");
+        assertEq(
+            loopBToken.balanceOf(address(nftMarketplace)) - marketplaceBTokenBefore,
+            expectedRemainder,
+            "marketplace LOOP remainder"
+        );
+        assertEq(reserveToken.balanceOf(address(afterburner)), 0, "afterburner should not receive WETH");
+        assertEq(reserveToken.balanceOf(blvModule), 0, "BLV should not receive WETH");
+    }
+
     function _test_buyNftFromVault(uint256 tokenId) internal {
         vm.warp(block.timestamp + auctionDuration - 100);
 
